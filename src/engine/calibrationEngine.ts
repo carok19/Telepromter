@@ -152,13 +152,34 @@ export function buildCalibrationStyle(settings: CalibrationSettings): CSSPropert
 // Estilo de la segunda capa (compensación experimental de doble reflejo).
 // Devuelve `null` si está desactivada, para que el componente simplemente no
 // la renderice.
+//
+// Esta capa es un nodo HIJO del "escenario" (el mismo elemento que ya tiene
+// aplicado scaleX/scaleY del mirror principal — ver buildCalibrationStyle).
+// Un transform hijo se compone DENTRO del sistema de coordenadas que le
+// hereda su padre, así que si aquí se hiciera simplemente
+// `translate(offsetX2, offsetY2)`, con el mirror horizontal activo esa
+// traslación terminaría viéndose invertida en pantalla (bug B2 de la
+// auditoría física: "+X" se sentía como "izquierda" en vez de "derecha").
+//
+// La corrección (demostrada por composición de matrices, no por prueba y
+// error): premultiplicar offsetX2/offsetY2 por el mismo signo que el padre
+// aplica en su propio scaleX/scaleY, y NO agregar ningún scale propio en
+// este nodo. Al componerse con el scale heredado del padre, ese signo se
+// cancela exactamente y el desplazamiento queda expresado en coordenadas
+// reales de pantalla (+X siempre a la derecha, +Y siempre hacia abajo),
+// para cualquier combinación de mirror — igual que ya se siente el offset
+// del texto principal. La ORIENTACIÓN del texto del ghost (reflejado o no)
+// no cambia: sigue determinada enteramente por el mirror heredado del
+// padre, ya que este nodo no aplica ningún scale propio.
 export function buildGhostLayerStyle(settings: CalibrationSettings): CSSProperties | null {
   const ghost = settings.ghostCompensation
   if (!ghost.enabled) return null
+  const mirrorSignX = settings.mirror === 'horizontal' ? -1 : 1
+  const mirrorSignY = settings.mirror === 'vertical' ? -1 : 1
   return {
     position: 'absolute',
     inset: 0,
-    transform: `translate(${ghost.offsetX2}px, ${ghost.offsetY2}px)`,
+    transform: `translate(${mirrorSignX * ghost.offsetX2}px, ${mirrorSignY * ghost.offsetY2}px)`,
     opacity: ghost.opacity2 / 100,
     filter: `blur(${ghost.blur2}px) brightness(${ghost.intensity2}%)`,
   }
