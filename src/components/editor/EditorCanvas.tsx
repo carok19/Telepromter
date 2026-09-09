@@ -92,6 +92,20 @@ export const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(fu
     target.setAttribute(AUTO_PAUSE_ATTR, String(nextAuto))
     target.textContent = nextAuto ? '⏸ PAUSA' : '[PAUSA]'
     target.className = getPauseMarkerClassName(nextAuto)
+
+    // Reemplazar el textContent del marcador invalida cualquier Selection que
+    // el navegador hubiera anclado dentro de ese nodo de texto: el contenedor
+    // sigue con foco, pero el caret queda en un estado inválido y el usuario
+    // no puede seguir escribiendo. Se restaura un caret válido justo después
+    // del marcador.
+    elRef.current?.focus()
+    const range = document.createRange()
+    range.setStartAfter(target)
+    range.collapse(true)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+
     emitChange()
   }
 
@@ -103,7 +117,7 @@ export const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(fu
       onInput={emitChange}
       onClick={handleClick}
       data-placeholder="Escribe tu guion aquí..."
-      className="tp-editor-canvas min-h-[400px] max-w-3xl rounded-lg border border-white/10 bg-[#0f1117] p-6 text-base leading-relaxed text-gray-100 empty:before:text-gray-600 empty:before:content-[attr(data-placeholder)] focus:border-blue-500/50 focus:outline-none [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_p]:mb-3"
+      className="tp-editor-canvas min-h-[400px] max-w-3xl rounded-lg border border-white/10 bg-[#0f1117] p-6 text-base leading-relaxed text-gray-100 empty:before:text-gray-600 empty:before:content-[attr(data-placeholder)] focus:border-blue-500/50 focus:outline-none [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_p]:mb-3 [&_div]:mb-3"
     />
   )
 })

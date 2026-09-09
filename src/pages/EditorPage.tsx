@@ -46,12 +46,21 @@ export function EditorPage() {
       setScript(record)
       setTitle(record.title)
       setWordCount(countWords(record.content))
-      canvasRef.current?.setContent(record.content)
     })
     return () => {
       cancelled = true
     }
   }, [id])
+
+  // Volcar el contenido cargado en el lienzo DESPUÉS de que "script" pase a
+  // no-nulo y React haya montado EditorCanvas (solo entonces canvasRef.current
+  // existe). Hacerlo dentro del .then() de arriba era demasiado pronto: en
+  // ese instante el render seguía mostrando "Cargando guion..." y el ref aún
+  // era null, así que el contenido se perdía visualmente pese a estar bien
+  // guardado en IndexedDB.
+  useEffect(() => {
+    if (script) canvasRef.current?.setContent(script.content)
+  }, [script])
 
   // Los cambios de título y de contenido comparten un único debounce, así que
   // se acumulan (merge) en pendingPatchRef en vez de reemplazarse entre sí;
