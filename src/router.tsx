@@ -19,6 +19,10 @@ export const router = createBrowserRouter([
       { path: 'editor/:id', element: <EditorPage /> },
       { path: 'teleprompter', element: <TeleprompterPage /> },
       { path: 'teleprompter/:id', element: <TeleprompterPage /> },
+      { path: 'glass-test', element: <GlassTestPage /> },
+      // Alias: la navegación (Fase 0) ya enlazaba a esta ruta como "Prueba
+      // de vidrio" antes de que Glass Test existiera. Se mantiene apuntando
+      // a la misma página para no romper el enlace previo.
       { path: 'prueba-de-vidrio', element: <GlassTestPage /> },
       { path: 'configuracion', element: <SettingsPage /> },
       { path: 'ayuda', element: <HelpPage /> },

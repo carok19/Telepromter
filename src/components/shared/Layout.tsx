@@ -5,7 +5,7 @@ const navItems = [
   { to: '/', label: 'Inicio', end: true },
   { to: '/guiones', label: 'Mis guiones' },
   { to: '/editor', label: 'Editor' },
-  { to: '/prueba-de-vidrio', label: 'Prueba de vidrio' },
+  { to: '/glass-test', label: 'Prueba de vidrio' },
   { to: '/configuracion', label: 'Configuración' },
   { to: '/ayuda', label: 'Ayuda' },
 ]
