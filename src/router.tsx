@@ -16,6 +16,7 @@ export const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: 'guiones', element: <LibraryPage /> },
       { path: 'editor', element: <EditorPage /> },
+      { path: 'editor/:id', element: <EditorPage /> },
       { path: 'teleprompter', element: <TeleprompterPage /> },
       { path: 'prueba-de-vidrio', element: <GlassTestPage /> },
       { path: 'configuracion', element: <SettingsPage /> },
