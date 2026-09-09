@@ -249,11 +249,22 @@ export class TeleprompterEngine {
   // dentro del tramo [from, to) que se va a recorrer en este frame. Un
   // marcador ya disparado (triggeredMarkers) se ignora, así que reanudar la
   // reproducción no vuelve a pausar en el mismo punto.
+  //
+  // Un marcador ubicado dentro de la primera mitad de pantalla (offsetTop <
+  // readingLinePx) tendría un punto de cruce NEGATIVO — una posición "antes
+  // del inicio" que el scroll, arrancando en 0, nunca podría alcanzar, y por
+  // lo tanto jamás se dispararía. Geométricamente, ese marcador ya está "en
+  // o por delante de" la línea de lectura desde el primer frame: la posición
+  // válida más temprana en la que puede considerarse cruzado es el propio
+  // inicio del recorrido (0). Se ancla (clamp) el punto de cruce a ese
+  // mínimo en vez de dejarlo negativo, así una pausa al comienzo del guion sí
+  // puede dispararse (en el primer frame con avance real), sin afectar en
+  // nada a los marcadores cuyo punto de cruce ya era válido.
   private findCrossedCheckpoint(from: number, to: number) {
     for (const checkpoint of this.checkpoints) {
       if (!checkpoint.autoPause) continue
       if (this.triggeredMarkers.has(checkpoint.element)) continue
-      const triggerPx = checkpoint.offsetTop - this.readingLinePx
+      const triggerPx = Math.max(0, checkpoint.offsetTop - this.readingLinePx)
       if (triggerPx >= from && triggerPx < to) {
         return { checkpoint, triggerPx }
       }
