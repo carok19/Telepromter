@@ -5,11 +5,14 @@ import {
   buildGhostLayerStyle,
   getEffectiveColors,
 } from '../engine/calibrationEngine'
+import { PairingModal } from '../components/remote/PairingModal'
 import { db, type ScriptRecord } from '../db/db'
 import { countWords, DEFAULT_WPM } from '../engine/duration'
 import { TeleprompterEngine } from '../engine/teleprompterEngine'
+import type { RemoteSession } from '../services/remoteSession'
 import { usePlayerStore } from '../stores/playerStore'
 import { useProfilesStore } from '../stores/profilesStore'
+import { useRemoteStore } from '../stores/remoteStore'
 
 // Recuerda el último perfil elegido para el teleprompter entre sesiones. Es
 // una preferencia liviana de UI (un id), no datos del dominio — se guarda en
@@ -64,6 +67,14 @@ function TeleprompterSession({ id }: { id: string }) {
   const loadProfiles = useProfilesStore((s) => s.loadProfiles)
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null)
 
+  const remoteConfigured = useRemoteStore((s) => s.configured)
+  const createRemoteSession = useRemoteStore((s) => s.createSession)
+  const endRemoteSession = useRemoteStore((s) => s.endSession)
+  const subscribeRemoteSession = useRemoteStore((s) => s.subscribeSession)
+  const [remoteSessionId, setRemoteSessionId] = useState<string | null>(null)
+  const [remoteSession, setRemoteSession] = useState<RemoteSession | null>(null)
+  const [showPairingModal, setShowPairingModal] = useState(false)
+
   // Cargar el guion.
   useEffect(() => {
     let cancelled = false
@@ -100,6 +111,35 @@ function TeleprompterSession({ id }: { id: string }) {
   }
 
   const selectedProfile = profiles.find((p) => p.id === selectedProfileId) ?? null
+
+  // Suscripción en vivo a la sesión de control remoto (F8.2), si existe una
+  // creada por este host. No tiene relación con la reproducción: solo se
+  // usa para reflejar "esperando remoto" / "remoto conectado" en la UI.
+  useEffect(() => {
+    if (!remoteSessionId) return
+    return subscribeRemoteSession(remoteSessionId, setRemoteSession)
+  }, [remoteSessionId, subscribeRemoteSession])
+
+  // Si el host abandona esta sesión de Teleprompter con un control remoto
+  // activo, se cierra: el remoto debe verlo como "Sesión finalizada" en vez
+  // de quedar "conectado" a un host que ya no está en esta pantalla.
+  useEffect(() => {
+    return () => {
+      if (remoteSessionId) endRemoteSession(remoteSessionId)
+    }
+  }, [remoteSessionId, endRemoteSession])
+
+  async function handleRemoteControlClick() {
+    if (remoteSessionId) {
+      setShowPairingModal(true)
+      return
+    }
+    const sessionId = await createRemoteSession(script?.title || 'Sin título')
+    if (sessionId) {
+      setRemoteSessionId(sessionId)
+      setShowPairingModal(true)
+    }
+  }
 
   // Conectar el motor al store en cuanto existe esta sesión.
   useEffect(() => {
@@ -269,6 +309,21 @@ function TeleprompterSession({ id }: { id: string }) {
           >
             Reiniciar
           </button>
+          <button
+            type="button"
+            onClick={handleRemoteControlClick}
+            disabled={!remoteConfigured}
+            title={!remoteConfigured ? 'Control remoto no disponible: Firebase no está configurado.' : undefined}
+            className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {!remoteSessionId
+              ? 'Control remoto'
+              : remoteSession?.status === 'ended'
+                ? 'Sesión cerrada'
+                : remoteSession?.remoteUid
+                  ? 'Remoto conectado'
+                  : 'Esperando remoto…'}
+          </button>
         </div>
 
         <label className="flex items-center gap-2 text-xs text-gray-500">
@@ -305,6 +360,15 @@ function TeleprompterSession({ id }: { id: string }) {
 
         <span className="text-xs text-gray-500">{statusLabel}</span>
       </footer>
+
+      {showPairingModal && remoteSessionId && (
+        <PairingModal
+          sessionId={remoteSessionId}
+          session={remoteSession}
+          joinUrl={`${window.location.origin}/remote/${remoteSessionId}`}
+          onClose={() => setShowPairingModal(false)}
+        />
+      )}
     </div>
   )
 }

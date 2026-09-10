@@ -1,27 +1,58 @@
 // Reglas de Realtime Database para el control remoto (F8).
 //
-// ESTADO: reglas MÍNIMAS de F8.1, preparadas para F8.6 — NO son las
-// definitivas. Exigen autenticación (Anonymous Auth) para leer o escribir
-// cualquier sesión, y bloquean todo lo demás por defecto. Como el sessionId
-// es un UUID aleatorio (ver generateSessionId() en
-// src/services/remoteSession.ts), esto ya evita el acceso por adivinanza,
-// pero todavía NO distingue host vs remoto: cualquier usuario autenticado
-// anónimamente que conozca un sessionId puede leer/escribir esa sesión
-// completa.
+// ESTADO: reglas de F8.2 — cubren exactamente lo que F8.2 necesita para ser
+// seguro (creación de sesión, unión de un único remoto), NO son las
+// definitivas de F8.6.
 //
-// PENDIENTE PARA F8.6:
-//   1. Limitar la escritura de playback/status solo a auth.uid === hostUid.
-//   2. Permitir fijar remoteUid una sola vez (de null a un valor, nunca
-//      sobrescribirlo desde otro uid).
-//   3. Limitar la escritura de "command" solo al remoteUid ya emparejado.
-//   4. Bloquear cualquier escritura una vez que status sea "ended" o la
-//      sesión haya expirado (expiresAt).
+// La escritura en /sessions/$sessionId se permite en cuatro casos, y en
+// ningún otro:
+//   1) CREACIÓN: la sesión no existe todavía, y quien escribe se declara a
+//      sí mismo como hostUid (no puede crear una sesión a nombre de otro
+//      uid), sin remoto asignado.
+//   2) HOST: el hostUid de la sesión ya existente coincide con quien
+//      escribe — el host puede reescribir su propia sesión libremente
+//      (cerrarla, etc.).
+//   3) UN REMOTO NUEVO SE UNE: la sesión existe, no está finalizada, no
+//      expiró, y todavía no tiene remoteUid — quien escribe puede
+//      registrarse a sí mismo como remoteUid, pero SOLO si hostUid/
+//      createdAt/expiresAt/scriptTitle quedan exactamente iguales (no puede
+//      tocar nada del host ni "convertirse" en host).
+//   4) EL REMOTO YA EMPAREJADO SE ACTUALIZA: quien escribe ya es el
+//      remoteUid registrado — puede actualizar remoteConnected/status (para
+//      reflejar reconexión/desconexión vía onDisconnect), con las mismas
+//      restricciones de no tocar los demás campos.
+//
+// La lectura exige solamente estar autenticado (Anonymous Auth). Limitar la
+// lectura de una sesión a exactamente su hostUid/remoteUid queda pendiente
+// para F8.6 — hoy cualquier usuario autenticado que conozca (o adivine) un
+// sessionId válido podría leer hostUid/remoteUid/scriptTitle de esa sesión.
+// Como el sessionId es un UUID aleatorio de 122 bits, adivinarlo no es
+// viable en la práctica, y no se expone contenido del guion ni datos
+// personales — pero la separación de lectura por rol es trabajo real
+// pendiente, no una omisión aceptada como definitiva.
 {
   "rules": {
     "sessions": {
       "$sessionId": {
         ".read": "auth != null",
-        ".write": "auth != null"
+
+        ".write": "auth != null && (
+          (!data.exists() && newData.child('hostUid').val() === auth.uid && newData.child('remoteUid').val() === null) ||
+          (data.exists() && data.child('hostUid').val() === auth.uid) ||
+          (data.exists() && data.child('status').val() !== 'ended' && data.child('expiresAt').val() > now &&
+           data.child('remoteUid').val() === null &&
+           newData.child('remoteUid').val() === auth.uid &&
+           newData.child('hostUid').val() === data.child('hostUid').val() &&
+           newData.child('createdAt').val() === data.child('createdAt').val() &&
+           newData.child('expiresAt').val() === data.child('expiresAt').val() &&
+           newData.child('scriptTitle').val() === data.child('scriptTitle').val()) ||
+          (data.exists() && data.child('remoteUid').val() === auth.uid &&
+           newData.child('remoteUid').val() === auth.uid &&
+           newData.child('hostUid').val() === data.child('hostUid').val() &&
+           newData.child('createdAt').val() === data.child('createdAt').val() &&
+           newData.child('expiresAt').val() === data.child('expiresAt').val() &&
+           newData.child('scriptTitle').val() === data.child('scriptTitle').val())
+        )"
       }
     },
     ".read": false,

@@ -12,8 +12,10 @@
   "dependencies": {
     "dexie": "^4.4.5",
     "firebase": "^12.19.0",
+    "html5-qrcode": "^2.3.8",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-qr-code": "^2.2.0",
     "react-router-dom": "^7.18.3",
     "zustand": "^5.0.15"
   },

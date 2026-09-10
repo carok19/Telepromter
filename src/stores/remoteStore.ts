@@ -3,17 +3,18 @@
 // delega toda la lógica real en los servicios (`firebase.ts`,
 // `remoteSession.ts`) y solo guarda el último resultado conocido.
 //
-// En F8.1 no lo usa ninguna pantalla todavía — existe para que F8.2 (QR,
-// pantalla de emparejamiento) lo reutilice sin tener que llamar a Firebase
-// directamente desde componentes.
+// F8.2 lo usa desde TeleprompterPage (host), RemoteJoinPage y
+// RemoteControlPage (remoto) para el flujo de emparejamiento. Los comandos
+// de reproducción reales llegan en F8.3+ reutilizando este mismo store.
 import { create } from 'zustand'
 import { isRemoteControlConfigured, signInAnonymouslyIfNeeded } from '../services/firebase'
 import {
-  createTestSession as createTestSessionRemote,
-  readSession as readSessionRemote,
+  createSession as createSessionRemote,
+  endSession as endSessionRemote,
+  joinSessionAsRemote,
   subscribeToSession,
-  updateTestSession as updateTestSessionRemote,
-  type RemoteTestSession,
+  type JoinSessionResult,
+  type RemoteSession,
 } from '../services/remoteSession'
 
 interface RemoteState {
@@ -21,13 +22,11 @@ interface RemoteState {
   uid: string | null
   authLoading: boolean
   authError: string | null
-  testSessionId: string | null
-  testSession: RemoteTestSession | null
-  initAuth: () => Promise<void>
-  createTestSession: () => Promise<string | null>
-  readTestSession: (sessionId: string) => Promise<RemoteTestSession | null>
-  updateTestSession: (sessionId: string, patch: Partial<RemoteTestSession>) => Promise<void>
-  subscribeTestSession: (sessionId: string) => () => void
+  ensureAuth: () => Promise<string | null>
+  createSession: (scriptTitle: string) => Promise<string | null>
+  endSession: (sessionId: string) => Promise<void>
+  subscribeSession: (sessionId: string, callback: (session: RemoteSession | null) => void) => () => void
+  joinSession: (sessionId: string) => Promise<JoinSessionResult>
 }
 
 export const useRemoteStore = create<RemoteState>((set, get) => ({
@@ -35,13 +34,13 @@ export const useRemoteStore = create<RemoteState>((set, get) => ({
   uid: null,
   authLoading: false,
   authError: null,
-  testSessionId: null,
-  testSession: null,
 
-  initAuth: async () => {
+  ensureAuth: async () => {
+    const existing = get().uid
+    if (existing) return existing
     if (!isRemoteControlConfigured()) {
       set({ authError: 'Firebase no está configurado (faltan variables de entorno).' })
-      return
+      return null
     }
     set({ authLoading: true, authError: null })
     const uid = await signInAnonymouslyIfNeeded()
@@ -50,27 +49,24 @@ export const useRemoteStore = create<RemoteState>((set, get) => ({
       authLoading: false,
       authError: uid ? null : 'No se pudo autenticar de forma anónima.',
     })
+    return uid
   },
 
-  createTestSession: async () => {
-    const uid = get().uid
+  createSession: async (scriptTitle) => {
+    const uid = await get().ensureAuth()
     if (!uid) return null
-    const sessionId = await createTestSessionRemote(uid)
-    set({ testSessionId: sessionId })
-    return sessionId
+    return createSessionRemote(uid, scriptTitle)
   },
 
-  readTestSession: async (sessionId) => {
-    const session = await readSessionRemote(sessionId)
-    set({ testSession: session })
-    return session
+  endSession: async (sessionId) => {
+    await endSessionRemote(sessionId)
   },
 
-  updateTestSession: async (sessionId, patch) => {
-    await updateTestSessionRemote(sessionId, patch)
-  },
+  subscribeSession: (sessionId, callback) => subscribeToSession(sessionId, callback),
 
-  subscribeTestSession: (sessionId) => {
-    return subscribeToSession(sessionId, (session) => set({ testSession: session }))
+  joinSession: async (sessionId) => {
+    const uid = await get().ensureAuth()
+    if (!uid) return { outcome: 'error', session: null }
+    return joinSessionAsRemote(sessionId, uid)
   },
 }))

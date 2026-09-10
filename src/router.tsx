@@ -7,6 +7,8 @@ import { TeleprompterPage } from './pages/TeleprompterPage'
 import { GlassTestPage } from './pages/GlassTestPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { HelpPage } from './pages/HelpPage'
+import { RemoteJoinPage } from './pages/RemoteJoinPage'
+import { RemoteControlPage } from './pages/RemoteControlPage'
 
 export const router = createBrowserRouter([
   {
@@ -26,6 +28,16 @@ export const router = createBrowserRouter([
       { path: 'prueba-de-vidrio', element: <GlassTestPage /> },
       { path: 'configuracion', element: <SettingsPage /> },
       { path: 'ayuda', element: <HelpPage /> },
+    ],
+  },
+  // Fuera de Layout a propósito: el modo remoto (F8) es una interfaz
+  // independiente, mobile-first y sin sidebar — no la vista con el menú
+  // lateral del resto de la app.
+  {
+    path: '/remote',
+    children: [
+      { index: true, element: <RemoteJoinPage /> },
+      { path: ':sessionId', element: <RemoteControlPage /> },
     ],
   },
 ])
