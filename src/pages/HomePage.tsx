@@ -7,8 +7,9 @@ export function HomePage() {
     <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
       <h1 className="text-2xl font-semibold text-gray-100">Robress Teleprompter</h1>
       <p className="max-w-md text-sm text-gray-500">
-        Fase 1 en curso: biblioteca de guiones y editor disponibles. El motor de teleprompter y el
-        modo vidrio se habilitan en las fases siguientes.
+        Biblioteca de guiones, editor, teleprompter con reproducción y pausas automáticas, y
+        Prueba de vidrio con calibración física (mirror, tipografía, brillo/contraste, perfiles)
+        ya disponibles desde el menú.
       </p>
       <button
         type="button"
