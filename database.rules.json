@@ -1,0 +1,30 @@
+// Reglas de Realtime Database para el control remoto (F8).
+//
+// ESTADO: reglas MÍNIMAS de F8.1, preparadas para F8.6 — NO son las
+// definitivas. Exigen autenticación (Anonymous Auth) para leer o escribir
+// cualquier sesión, y bloquean todo lo demás por defecto. Como el sessionId
+// es un UUID aleatorio (ver generateSessionId() en
+// src/services/remoteSession.ts), esto ya evita el acceso por adivinanza,
+// pero todavía NO distingue host vs remoto: cualquier usuario autenticado
+// anónimamente que conozca un sessionId puede leer/escribir esa sesión
+// completa.
+//
+// PENDIENTE PARA F8.6:
+//   1. Limitar la escritura de playback/status solo a auth.uid === hostUid.
+//   2. Permitir fijar remoteUid una sola vez (de null a un valor, nunca
+//      sobrescribirlo desde otro uid).
+//   3. Limitar la escritura de "command" solo al remoteUid ya emparejado.
+//   4. Bloquear cualquier escritura una vez que status sea "ended" o la
+//      sesión haya expirado (expiresAt).
+{
+  "rules": {
+    "sessions": {
+      "$sessionId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+    ".read": false,
+    ".write": false
+  }
+}
