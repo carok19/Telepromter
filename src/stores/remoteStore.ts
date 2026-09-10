@@ -4,16 +4,22 @@
 // `remoteSession.ts`) y solo guarda el último resultado conocido.
 //
 // F8.2 lo usa desde TeleprompterPage (host), RemoteJoinPage y
-// RemoteControlPage (remoto) para el flujo de emparejamiento. Los comandos
-// de reproducción reales llegan en F8.3+ reutilizando este mismo store.
+// RemoteControlPage (remoto) para el flujo de emparejamiento. F8.3 agrega
+// el envío/recepción de comandos discretos y el snapshot de reproducción,
+// reutilizando este mismo store.
 import { create } from 'zustand'
 import { isRemoteControlConfigured, signInAnonymouslyIfNeeded } from '../services/firebase'
 import {
   createSession as createSessionRemote,
   endSession as endSessionRemote,
   joinSessionAsRemote,
+  publishPlayback as publishPlaybackRemote,
+  sendCommand as sendCommandRemote,
+  subscribeToConnectivity,
   subscribeToSession,
   type JoinSessionResult,
+  type RemoteCommandType,
+  type RemotePlayback,
   type RemoteSession,
 } from '../services/remoteSession'
 
@@ -27,6 +33,9 @@ interface RemoteState {
   endSession: (sessionId: string) => Promise<void>
   subscribeSession: (sessionId: string, callback: (session: RemoteSession | null) => void) => () => void
   joinSession: (sessionId: string) => Promise<JoinSessionResult>
+  sendCommand: (sessionId: string, type: RemoteCommandType) => Promise<void>
+  publishPlayback: (sessionId: string, playback: RemotePlayback) => Promise<void>
+  subscribeConnectivity: (callback: (connected: boolean) => void) => () => void
 }
 
 export const useRemoteStore = create<RemoteState>((set, get) => ({
@@ -69,4 +78,10 @@ export const useRemoteStore = create<RemoteState>((set, get) => ({
     if (!uid) return { outcome: 'error', session: null }
     return joinSessionAsRemote(sessionId, uid)
   },
+
+  sendCommand: (sessionId, type) => sendCommandRemote(sessionId, type),
+
+  publishPlayback: (sessionId, playback) => publishPlaybackRemote(sessionId, playback),
+
+  subscribeConnectivity: (callback) => subscribeToConnectivity(callback),
 }))

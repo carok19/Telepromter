@@ -3,12 +3,36 @@
 // reglas de seguridad asociadas a esta forma exacta de documento.
 //
 // F8.2 implementa el emparejamiento (creación de sesión + unión de un único
-// remoto). Los comandos de reproducción (play/pause/seek/velocidad) llegan
-// en F8.3+ reutilizando esta misma sesión, sin cambiar su forma base.
+// remoto). F8.3 agrega comandos discretos de reproducción (play/pause/
+// toggle/reset) y el snapshot de estado host→remoto, reutilizando esta
+// misma sesión sin cambiar su forma base. Velocidad/seek llegan en F8.4.
 import { get, onDisconnect, onValue, ref, runTransaction, set } from 'firebase/database'
+import type { TeleprompterStatus } from '../engine/teleprompterEngine'
 import { getFirebaseDatabase } from './firebase'
 
 export type RemoteSessionStatus = 'waiting' | 'paired' | 'ended'
+
+export type RemoteCommandType = 'play' | 'pause' | 'toggle' | 'reset'
+
+export interface RemoteCommand {
+  type: RemoteCommandType
+  // Único por cada envío (incluso si dos pulsaciones seguidas son del mismo
+  // tipo) — así el host puede distinguir "comando nuevo" de "mismo nodo
+  // reenviado", ver processCommand más abajo.
+  commandId: string
+  issuedAt: number
+}
+
+// Snapshot de solo lectura para el remoto: nunca incluye posición en
+// píxeles, geometría ni nada dependiente del tamaño de pantalla del host.
+export interface RemotePlayback {
+  engineStatus: TeleprompterStatus
+  // Normalizado 0 (inicio) a 1 (final) — nunca positionPx/totalPx.
+  progress: number
+  wpm: number
+  pausedByMarker: boolean
+  updatedAt: number
+}
 
 export interface RemoteSession {
   hostUid: string
@@ -23,6 +47,10 @@ export interface RemoteSession {
   status: RemoteSessionStatus
   // Cosmético únicamente: nunca se sube el contenido del guion.
   scriptTitle: string
+  // Escrito solo por el remoto emparejado (ver database.rules.json).
+  command?: RemoteCommand | null
+  // Escrito solo por el host (ver database.rules.json).
+  playback?: RemotePlayback | null
 }
 
 // Provisorio: dura lo que dura una sesión típica de lectura frente al
@@ -146,4 +174,43 @@ export async function joinSessionAsRemote(sessionId: string, remoteUid: string):
     console.error('[remote] joinSessionAsRemote falló:', err)
     return { outcome: 'error', session: null }
   }
+}
+
+// Llamada por el REMOTO. Escribe un comando discreto — nunca posición de
+// scroll ni nada por el estilo. Cada llamada genera un commandId nuevo
+// (incluso para el mismo `type` dos veces seguidas), así el host siempre
+// puede distinguir dos pulsaciones de una sola escritura reenviada.
+export async function sendCommand(sessionId: string, type: RemoteCommandType): Promise<void> {
+  const db = getFirebaseDatabase()
+  if (!db) return
+  const command: RemoteCommand = {
+    type,
+    commandId: crypto.randomUUID(),
+    issuedAt: Date.now(),
+  }
+  await set(ref(db, `${sessionPath(sessionId)}/command`), command)
+}
+
+// Llamada por el HOST. TeleprompterPage arma este objeto a partir del
+// snapshot que ya expone playerStore/TeleprompterEngine, con su propio
+// throttle (ver comentario en TeleprompterPage) — esta función solo hace la
+// escritura, no decide cuándo llamarla.
+export async function publishPlayback(sessionId: string, playback: RemotePlayback): Promise<void> {
+  const db = getFirebaseDatabase()
+  if (!db) return
+  await set(ref(db, `${sessionPath(sessionId)}/playback`), playback)
+}
+
+// `.info/connected` es un path especial de RTDB que refleja si ESTE cliente
+// tiene conexión activa con el servidor — se usa en RemoteControlPage para
+// mostrar "Conexión perdida" sin desmontar la página ni cerrar la sesión.
+export function subscribeToConnectivity(callback: (connected: boolean) => void): () => void {
+  const db = getFirebaseDatabase()
+  if (!db) {
+    callback(false)
+    return () => {}
+  }
+  return onValue(ref(db, '.info/connected'), (snapshot) => {
+    callback(snapshot.val() === true)
+  })
 }

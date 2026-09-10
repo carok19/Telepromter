@@ -19,6 +19,12 @@ import { useRemoteStore } from '../stores/remoteStore'
 // localStorage a propósito, sin tocar el esquema de Dexie para esto.
 const LAST_PROFILE_STORAGE_KEY = 'robress:teleprompterProfileId'
 
+// F8.3: cota máxima de cuánto se demora en publicar el progreso a Firebase
+// mientras se reproduce (los cambios de estado discretos se publican de
+// inmediato igual, ver el efecto de publishRemotePlayback más abajo). Es
+// una capa de throttle propia, independiente de EMIT_THROTTLE_MS del motor.
+const PLAYBACK_PUBLISH_INTERVAL_MS = 1500
+
 // El Ghost es un hijo del mismo elemento que el motor transforma (así se
 // mueve en sincronía con el scroll sin que el motor tenga que saber nada de
 // calibración). Pero eso significa que su copia del HTML también contendría
@@ -59,6 +65,8 @@ function TeleprompterSession({ id }: { id: string }) {
   const wpm = usePlayerStore((s) => s.wpm)
   const pausedByMarker = usePlayerStore((s) => s.pausedByMarker)
   const attachEngine = usePlayerStore((s) => s.attachEngine)
+  const play = usePlayerStore((s) => s.play)
+  const pause = usePlayerStore((s) => s.pause)
   const togglePlay = usePlayerStore((s) => s.togglePlay)
   const resetPlayback = usePlayerStore((s) => s.reset)
   const setSpeed = usePlayerStore((s) => s.setSpeed)
@@ -71,9 +79,12 @@ function TeleprompterSession({ id }: { id: string }) {
   const createRemoteSession = useRemoteStore((s) => s.createSession)
   const endRemoteSession = useRemoteStore((s) => s.endSession)
   const subscribeRemoteSession = useRemoteStore((s) => s.subscribeSession)
+  const publishRemotePlayback = useRemoteStore((s) => s.publishPlayback)
   const [remoteSessionId, setRemoteSessionId] = useState<string | null>(null)
   const [remoteSession, setRemoteSession] = useState<RemoteSession | null>(null)
   const [showPairingModal, setShowPairingModal] = useState(false)
+  const lastCommandIdRef = useRef<string | null>(null)
+  const lastPublishRef = useRef<{ status: string; pausedByMarker: boolean; publishedAt: number } | null>(null)
 
   // Cargar el guion.
   useEffect(() => {
@@ -140,6 +151,52 @@ function TeleprompterSession({ id }: { id: string }) {
       setShowPairingModal(true)
     }
   }
+
+  // F8.3 — REMOTE → HOST: ejecuta el comando que llega en remoteSession.command.
+  // Las reglas de Firebase (database.rules.json) ya garantizan que solo el
+  // remoteUid emparejado puede escribir ahí, así que no hace falta
+  // reverificarlo acá. commandId identifica cada envío (incluso dos
+  // pulsaciones seguidas del mismo tipo generan uno distinto), y se guarda
+  // en memoria el último procesado para no ejecutar el mismo dos veces si
+  // el listener se dispara de nuevo con el mismo valor (p. ej. al
+  // reconectar). No se toca teleprompterEngine.ts: se reutiliza tal cual la
+  // API que playerStore ya expone.
+  useEffect(() => {
+    const command = remoteSession?.command
+    if (!command || command.commandId === lastCommandIdRef.current) return
+    lastCommandIdRef.current = command.commandId
+    if (command.type === 'play') play()
+    else if (command.type === 'pause') pause()
+    else if (command.type === 'toggle') togglePlay()
+    else if (command.type === 'reset') resetPlayback()
+  }, [remoteSession?.command, play, pause, togglePlay, resetPlayback])
+
+  // F8.3 — HOST → REMOTE: publica un snapshot de reproducción normalizado
+  // (nunca positionPx/totalPx) para que el remoto lo muestre. Es una capa de
+  // throttle propia e independiente del throttle interno de 120ms del
+  // motor (EMIT_THROTTLE_MS en teleprompterEngine.ts) — ese sigue existiendo
+  // solo para no saturar los renders de React locales; este efecto decide,
+  // aparte, cuándo vale la pena escribir en Firebase. Los cambios de estado
+  // importantes (play/pause/reset/finished/pausa por marcador) se publican
+  // de inmediato; mientras se reproduce y solo cambia el progreso, se
+  // publica como máximo cada PLAYBACK_PUBLISH_INTERVAL_MS. Solo corre una
+  // vez hay un remoto emparejado — antes de eso nadie lo está escuchando.
+  useEffect(() => {
+    if (!remoteSessionId || !remoteSession?.remoteUid) return
+    const now = Date.now()
+    const prev = lastPublishRef.current
+    const statusChanged = !prev || prev.status !== status || prev.pausedByMarker !== pausedByMarker
+    const progressDue = !prev || now - prev.publishedAt >= PLAYBACK_PUBLISH_INTERVAL_MS
+    if (!statusChanged && !progressDue) return
+    lastPublishRef.current = { status, pausedByMarker, publishedAt: now }
+    publishRemotePlayback(remoteSessionId, {
+      engineStatus: status,
+      progress,
+      wpm,
+      pausedByMarker,
+      updatedAt: now,
+    })
+  }, [remoteSessionId, remoteSession?.remoteUid, status, progress, wpm, pausedByMarker, publishRemotePlayback])
 
   // Conectar el motor al store en cuanto existe esta sesión.
   useEffect(() => {
