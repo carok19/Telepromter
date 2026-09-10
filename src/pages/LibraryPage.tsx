@@ -99,6 +99,7 @@ export function LibraryPage() {
             key={script.id}
             script={script}
             onOpen={() => navigate(`/editor/${script.id}`)}
+            onOpenTeleprompter={() => navigate(`/teleprompter/${script.id}`)}
             onDuplicate={() => duplicateScript(script.id!)}
             onDelete={() => handleDelete(script.id!)}
           />
