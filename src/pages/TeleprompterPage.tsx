@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FocusEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   buildCalibrationStyle,
@@ -9,6 +9,8 @@ import { PairingModal } from '../components/remote/PairingModal'
 import { db, type ScriptRecord } from '../db/db'
 import { countWords, DEFAULT_WPM } from '../engine/duration'
 import { TeleprompterEngine } from '../engine/teleprompterEngine'
+import { useFullscreen } from '../hooks/useFullscreen'
+import { useIdleControls } from '../hooks/useIdleControls'
 import { useWakeLock } from '../hooks/useWakeLock'
 import type { RemoteSession } from '../services/remoteSession'
 import { usePlayerStore } from '../stores/playerStore'
@@ -60,12 +62,19 @@ function TeleprompterSession({ id }: { id: string }) {
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
   const [engine] = useState(() => new TeleprompterEngine())
 
   // Activo todo el tiempo que esta pantalla está montada (entrar/salir del
   // Teleprompter, no el estado de reproducción) — leer detrás del vidrio
   // con la pantalla apagándose sola no sirve de nada.
   const { supported: wakeLockSupported, failed: wakeLockFailed } = useWakeLock(true)
+
+  // "Pantalla limpia": pantalla completa sobre el contenedor raíz, y
+  // header/footer que se ocultan tras unos segundos de inactividad.
+  const { supported: fsSupported, isFullscreen, toggle: toggleFullscreen } = useFullscreen(rootRef)
+  const { idle } = useIdleControls()
+  const [footerHasFocus, setFooterHasFocus] = useState(false)
 
   const status = usePlayerStore((s) => s.status)
   const progress = usePlayerStore((s) => s.progress)
@@ -94,6 +103,61 @@ function TeleprompterSession({ id }: { id: string }) {
   const [remoteError, setRemoteError] = useState<string | null>(null)
   const lastCommandIdRef = useRef<string | null>(null)
   const lastPublishRef = useRef<{ status: string; pausedByMarker: boolean; publishedAt: number } | null>(null)
+
+  // Nunca se ocultan mientras: hay un modal de emparejamiento abierto, hay
+  // un error de control remoto visible, o algún control del footer (p. ej.
+  // el <select> de perfil con su desplegable abierto) tiene el foco. El
+  // estado "pausado" NO fuerza los controles visibles a propósito — se
+  // trata como cualquier otro estado de reproducción.
+  const controlsVisible = !idle || showPairingModal || remoteError != null || footerHasFocus
+
+  // TOQUE FANTASMA: si el mismo toque que revela los controles (touchstart)
+  // también generara su click sobre un botón recién aparecido (p. ej. Play),
+  // se dispararía una acción no querida. Los controles se hacen visibles de
+  // inmediato (opacity), pero pointer-events se habilita recién ~350ms
+  // después — tiempo de sobra para que termine el gesto de touch que los
+  // reveló, y prácticamente imperceptible para un click deliberado posterior.
+  const [controlsInteractive, setControlsInteractive] = useState(false)
+  useEffect(() => {
+    if (!controlsVisible) {
+      setControlsInteractive(false)
+      return
+    }
+    const timer = setTimeout(() => setControlsInteractive(true), 350)
+    return () => clearTimeout(timer)
+  }, [controlsVisible])
+
+  function handleFooterFocus() {
+    setFooterHasFocus(true)
+  }
+
+  function handleFooterBlur(e: FocusEvent<HTMLElement>) {
+    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+      setFooterHasFocus(false)
+    }
+  }
+
+  // Si el elemento raíz sigue en pantalla completa al salir de esta pantalla
+  // (botón "Volver" o desmontaje por cualquier otra vía), hay que salir
+  // explícitamente: nada garantiza que el navegador lo haga solo al quitar
+  // el elemento del DOM.
+  function exitFullscreenIfActive() {
+    if (document.fullscreenElement === rootRef.current) {
+      document.exitFullscreen().catch(() => {})
+    }
+  }
+
+  function handleBack() {
+    exitFullscreenIfActive()
+    navigate('/guiones')
+  }
+
+  useEffect(() => {
+    return () => {
+      exitFullscreenIfActive()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Cargar el guion.
   useEffect(() => {
@@ -306,49 +370,69 @@ function TeleprompterSession({ id }: { id: string }) {
   const ghostHtml = ghostStyle ? stripPauseMarkersForGhost(script.content) : null
 
   return (
-    // h-screen (no h-full): el contenedor de Layout solo define min-h-screen,
-    // así que su altura real es "auto" según el contenido. Si esta página
-    // usara h-full (100% del padre), un guion muy largo haría crecer TODA
-    // la página (sidebar incluido) para acomodarlo, y el viewport interno
-    // nunca quedaría acotado para medir correctamente cuánto hay que
-    // desplazar. h-screen fija esta página al alto real del viewport del
-    // navegador, sin depender de cómo termine midiéndose el resto del layout.
-    <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-4 border-b border-white/10 px-6 py-3">
-        <button
-          type="button"
-          onClick={() => navigate('/guiones')}
-          className="text-sm text-gray-400 hover:text-gray-100"
-        >
-          ← Volver
-        </button>
-        <h1 className="flex-1 truncate text-lg font-medium text-gray-100">{script.title || 'Sin título'}</h1>
-        {!wakeLockSupported && (
-          <span className="text-xs text-gray-500">La pantalla podría apagarse sola en este navegador.</span>
-        )}
-        {wakeLockSupported && wakeLockFailed && (
-          <span className="text-xs text-gray-500">No se pudo mantener la pantalla encendida (¿ahorro de batería?).</span>
-        )}
-        <span className="text-xs text-gray-500">{Math.round(progress * 100)}%</span>
-      </header>
+    // h-dvh (no h-screen): en celular, fuera de pantalla completa, la barra
+    // de direcciones del navegador puede ocupar parte de h-screen (100vh
+    // "clásico") y tapar el footer superpuesto. h-dvh usa el alto de
+    // viewport dinámico, que ya descuenta esa barra. Esta ruta vive fuera de
+    // Layout (ver router.tsx) precisamente para esta fase: nada de sidebar
+    // ni chrome ajeno debe compartir la pantalla con el texto.
+    // cursor-none mientras `idle` es true: sin esto, el cursor del mouse
+    // quedaría visible sobre el texto en un equipo de escritorio aun con los
+    // controles ocultos.
+    <div
+      ref={rootRef}
+      className={`relative h-dvh w-full overflow-hidden bg-[#0b0c10] ${idle ? 'cursor-none' : ''}`}
+    >
+      {/* Overlay superior: header + aviso de pausa por marcador, ambos
+          posicionados de forma absoluta (no en el flujo flex) para que
+          ocultarlos nunca cambie el alto de viewportRef — el motor mide
+          clientHeight una sola vez al montar y en resize/cambio de perfil,
+          así que si el header reapareciera empujando el layout, totalPx y
+          readingLinePx quedarían mal calculados sin que nada dispare un
+          recalculateGeometry. Con overlays absolutos, el viewport ocupa
+          siempre el 100% del contenedor raíz y esto no puede pasar. */}
+      <div
+        className={`absolute inset-x-0 top-0 z-20 flex flex-col transition-opacity duration-200 ${
+          controlsVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+        style={{ pointerEvents: controlsInteractive ? 'auto' : 'none' }}
+      >
+        <header className="flex items-center gap-4 border-b border-white/10 bg-[#0b0c10]/90 px-6 py-3 backdrop-blur-sm">
+          <button type="button" onClick={handleBack} className="text-sm text-gray-400 hover:text-gray-100">
+            ← Volver
+          </button>
+          <h1 className="flex-1 truncate text-lg font-medium text-gray-100">{script.title || 'Sin título'}</h1>
+          {!wakeLockSupported && (
+            <span className="text-xs text-gray-500">La pantalla podría apagarse sola en este navegador.</span>
+          )}
+          {wakeLockSupported && wakeLockFailed && (
+            <span className="text-xs text-gray-500">
+              No se pudo mantener la pantalla encendida (¿ahorro de batería?).
+            </span>
+          )}
+          {fsSupported && (
+            <button type="button" onClick={toggleFullscreen} className="text-xs text-gray-400 hover:text-gray-100">
+              {isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+            </button>
+          )}
+          <span className="text-xs text-gray-500">{Math.round(progress * 100)}%</span>
+        </header>
 
-      {pausedByMarker && (
-        <div className="border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-center text-sm text-amber-300">
-          ⏸ Pausado automáticamente en un marcador de pausa. Presiona Play para continuar.
-        </div>
-      )}
+        {pausedByMarker && (
+          <div className="border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-center text-sm text-amber-300">
+            ⏸ Pausado automáticamente en un marcador de pausa. Presiona Play para continuar.
+          </div>
+        )}
+      </div>
 
-      {/* min-h-0 es necesario: un hijo flex dentro de flex-col no se
-          encoge por debajo de la altura de su contenido por defecto
-          (min-height: auto), así que sin esto "flex-1 overflow-hidden" no
-          recorta nada y el viewport crece para igualar el alto total del
-          guion — totalPx quedaría en 0 y el motor nunca se movería.
-          El color de fondo del perfil se aplica aquí (por encima de la
+      {/* El color de fondo del perfil se aplica aquí (por encima de la
           clase bg-[#0b0c10] de siempre) para que el área completa detrás
-          del vidrio coincida con lo calibrado en Glass Test. */}
+          del vidrio coincida con lo calibrado en Glass Test. absolute
+          inset-0: ocupa siempre el contenedor raíz entero, sin importar si
+          los overlays de header/footer están visibles u ocultos. */}
       <div
         ref={viewportRef}
-        className="relative min-h-0 flex-1 overflow-hidden bg-[#0b0c10]"
+        className="absolute inset-0 overflow-hidden bg-[#0b0c10]"
         style={{ backgroundColor: viewportBackground }}
       >
         {/* Este wrapper solo existe para aplicar mirror/offset/filtro/ancho
@@ -385,74 +469,95 @@ function TeleprompterSession({ id }: { id: string }) {
         </div>
       </div>
 
-      <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 px-6 py-3">
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={togglePlay}
-            className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-          >
-            {playLabel}
-          </button>
-          <button
-            type="button"
-            onClick={resetPlayback}
-            className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
-          >
-            Reiniciar
-          </button>
-          <button
-            type="button"
-            onClick={handleRemoteControlClick}
-            disabled={!remoteConfigured}
-            title={!remoteConfigured ? 'Control remoto no disponible en este momento.' : undefined}
-            className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {!remoteSessionId
-              ? 'Control remoto'
-              : remoteSession?.status === 'ended'
-                ? 'Sesión cerrada'
-                : remoteSession?.remoteConnected
-                  ? 'Remoto conectado'
-                  : 'Esperando remoto…'}
-          </button>
-          {remoteError && <span className="text-xs text-red-400">{remoteError}</span>}
-        </div>
+      {/* Overlay inferior: mismo motivo que el de arriba (absoluto, no
+          reflow). onFocus/onBlur (con bubbling) trackean si algún control
+          del footer tiene el foco, para no ocultarlo mientras (p. ej. el
+          <select> de perfil con su desplegable abierto en desktop). */}
+      <div
+        className={`absolute inset-x-0 bottom-0 z-20 transition-opacity duration-200 ${
+          controlsVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+        style={{ pointerEvents: controlsInteractive ? 'auto' : 'none' }}
+      >
+        <footer
+          onFocus={handleFooterFocus}
+          onBlur={handleFooterBlur}
+          className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 bg-[#0b0c10]/90 px-6 py-3 backdrop-blur-sm"
+        >
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={togglePlay}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            >
+              {playLabel}
+            </button>
+            <button
+              type="button"
+              onClick={resetPlayback}
+              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
+            >
+              Reiniciar
+            </button>
+            <button
+              type="button"
+              onClick={handleRemoteControlClick}
+              disabled={!remoteConfigured}
+              title={!remoteConfigured ? 'Control remoto no disponible en este momento.' : undefined}
+              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {!remoteSessionId
+                ? 'Control remoto'
+                : remoteSession?.status === 'ended'
+                  ? 'Sesión cerrada'
+                  : remoteSession?.remoteConnected
+                    ? 'Remoto conectado'
+                    : 'Esperando remoto…'}
+            </button>
+            {remoteError && <span className="text-xs text-red-400">{remoteError}</span>}
+          </div>
 
-        <label className="flex items-center gap-2 text-xs text-gray-500">
-          Velocidad (PPM)
-          <input
-            type="number"
-            min={40}
-            max={300}
-            value={wpm}
-            onChange={(e) => setSpeed(Number(e.target.value) || DEFAULT_WPM)}
-            className="w-16 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
-          />
-        </label>
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            Velocidad (PPM)
+            <input
+              type="number"
+              min={40}
+              max={300}
+              value={wpm}
+              onChange={(e) => setSpeed(Number(e.target.value) || DEFAULT_WPM)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+              }}
+              className="w-16 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
+            />
+          </label>
 
-        <label className="flex items-center gap-2 text-xs text-gray-500">
-          Perfil
-          <select
-            value={selectedProfileId ?? ''}
-            onChange={(e) => handleSelectProfile(e.target.value)}
-            className="rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
-          >
-            <option value="">Predeterminado</option>
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
+          <label className="flex items-center gap-2 text-xs text-gray-500">
+            Perfil
+            <select
+              value={selectedProfileId ?? ''}
+              onChange={(e) => {
+                handleSelectProfile(e.target.value)
+                e.target.blur()
+              }}
+              className="rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
+            >
+              <option value="">Predeterminado</option>
+              {profiles.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
-          <div className="h-full bg-blue-500" style={{ width: `${Math.round(progress * 100)}%` }} />
-        </div>
+          <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
+            <div className="h-full bg-blue-500" style={{ width: `${Math.round(progress * 100)}%` }} />
+          </div>
 
-        <span className="text-xs text-gray-500">{statusLabel}</span>
-      </footer>
+          <span className="text-xs text-gray-500">{statusLabel}</span>
+        </footer>
+      </div>
 
       {showPairingModal && remoteSessionId && (
         <PairingModal
