@@ -161,10 +161,48 @@ export class TeleprompterEngine {
     this.applyTransform()
   }
 
+  // F8.4 — usado por el comando remoto de avanzar/retroceder (siempre vía
+  // seekToProgress, nunca con píxeles cruzando la red). Dos correcciones
+  // necesarias para que un salto se comporte como el usuario espera, no
+  // solo como "mover la posición":
+  //
+  // 1) Si el estado es 'finished' y el salto deja la posición antes del
+  //    final, hay que pasar a 'paused'. Si no, play() vería 'finished' y
+  //    llamaría a resetInternal() (reiniciar al inicio) en vez de
+  //    continuar desde donde acaba de retroceder el usuario.
+  // 2) Un salto hacia atrás puede dejar "por delante" (en o después de la
+  //    nueva posición) un marcador de pausa que ya se había disparado
+  //    antes de llegar al final. Sin limpiar `triggeredMarkers`, ese
+  //    marcador quedaría marcado como "ya visto" para siempre y
+  //    `findCrossedCheckpoint` nunca volvería a pausar ahí al releerlo —
+  //    aunque visualmente el usuario está viendo el texto por primera vez
+  //    otra vez. Se destriggerean todos los marcadores cuyo punto de
+  //    cruce (misma fórmula que findCrossedCheckpoint) sea >= la nueva
+  //    posición, y se limpia pausedByMarker (si el seek aterrizó lejos de
+  //    cualquier marcador, no hay razón para seguir mostrando ese aviso).
   seek(px: number) {
-    this.positionPx = Math.min(Math.max(0, px), this.totalPx)
+    const clamped = Math.min(Math.max(0, px), this.totalPx)
+    this.positionPx = clamped
+    for (const checkpoint of this.checkpoints) {
+      const triggerPx = Math.max(0, checkpoint.offsetTop - this.readingLinePx)
+      if (triggerPx >= clamped) this.triggeredMarkers.delete(checkpoint.element)
+    }
+    this.pausedByMarker = false
+    if (this.status === 'finished' && clamped < this.totalPx) {
+      this.status = 'paused'
+    }
     this.applyTransform()
     this.emit(true)
+  }
+
+  // Nunca se envían píxeles por la red: el remoto solo conoce progreso
+  // normalizado (0-1), y cada host lo convierte a su propia geometría
+  // (totalPx puede ser distinto en cada pantalla). También la usa
+  // TeleprompterPage para restaurar la posición de lectura tras un
+  // cambio de calibración que reflowea el texto (Fase F8.4 parte B).
+  seekToProgress(progress: number) {
+    const clamped = Math.min(Math.max(0, progress), 1)
+    this.seek(clamped * this.totalPx)
   }
 
   getProgress(): number {

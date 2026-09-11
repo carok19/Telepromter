@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FocusEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   buildCalibrationStyle,
@@ -7,12 +7,12 @@ import {
 } from '../engine/calibrationEngine'
 import { PairingModal } from '../components/remote/PairingModal'
 import { db, type ScriptRecord } from '../db/db'
-import { countWords, DEFAULT_WPM } from '../engine/duration'
+import { countWords, DEFAULT_WPM, estimateDurationSeconds } from '../engine/duration'
 import { TeleprompterEngine } from '../engine/teleprompterEngine'
 import { useFullscreen } from '../hooks/useFullscreen'
 import { useIdleControls } from '../hooks/useIdleControls'
 import { useWakeLock } from '../hooks/useWakeLock'
-import type { RemoteSession } from '../services/remoteSession'
+import { clampRemoteWpm, MAX_REMOTE_WPM, MIN_REMOTE_WPM, type RemoteSession } from '../services/remoteSession'
 import { usePlayerStore } from '../stores/playerStore'
 import { useProfilesStore } from '../stores/profilesStore'
 import { useRemoteStore } from '../stores/remoteStore'
@@ -28,6 +28,15 @@ const LAST_PROFILE_STORAGE_KEY = 'robress:teleprompterProfileId'
 // más abajo). Es una capa de throttle propia, independiente de
 // EMIT_THROTTLE_MS del motor.
 const PLAYBACK_PUBLISH_INTERVAL_MS = 1500
+
+// F8.4 parte A: SEEK_SECONDS es cuánto salta cada pulsación de avanzar/
+// retroceder, interpretado con la velocidad ACTUAL del host (nunca con una
+// suposición del remoto, que no conoce esa velocidad con certeza en el
+// instante exacto del click). El rango de velocidad válido vive en
+// remoteSession.ts (MIN_REMOTE_WPM/MAX_REMOTE_WPM/clampRemoteWpm) — mismo
+// número para el input del footer, el comando remoto entrante y los
+// botones del control remoto.
+const SEEK_SECONDS = 5
 
 // El Ghost es un hijo del mismo elemento que el motor transforma (así se
 // mueve en sincronía con el scroll sin que el motor tenga que saber nada de
@@ -59,6 +68,15 @@ export function TeleprompterPage() {
 function TeleprompterSession({ id }: { id: string }) {
   const navigate = useNavigate()
   const [script, setScript] = useState<ScriptRecord | null | undefined>(undefined)
+
+  // Memoizado (no recalculado en cada render): countWords vuelve a parsear
+  // el HTML con DOMParser, y este componente re-renderiza hasta ~8 veces
+  // por segundo mientras se reproduce (EMIT_THROTTLE_MS del motor). Solo
+  // cambia cuando cambia `script` (prácticamente solo al cargar), así que
+  // recomputarlo en cada tick de progreso sería puro desperdicio. Lo usa el
+  // manejador de comandos remotos de avanzar/retroceder para convertir
+  // segundos a progreso normalizado con la misma fórmula que ya usa el motor.
+  const wordCount = useMemo(() => (script ? countWords(script.content) : 0), [script])
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -102,7 +120,9 @@ function TeleprompterSession({ id }: { id: string }) {
   const [showPairingModal, setShowPairingModal] = useState(false)
   const [remoteError, setRemoteError] = useState<string | null>(null)
   const lastCommandIdRef = useRef<string | null>(null)
-  const lastPublishRef = useRef<{ status: string; pausedByMarker: boolean; publishedAt: number } | null>(null)
+  const lastPublishRef = useRef<{ status: string; pausedByMarker: boolean; wpm: number; publishedAt: number } | null>(
+    null,
+  )
 
   // Nunca se ocultan mientras: hay un modal de emparejamiento abierto, hay
   // un error de control remoto visible, o algún control del footer (p. ej.
@@ -228,22 +248,34 @@ function TeleprompterSession({ id }: { id: string }) {
     }
   }
 
-  // F8.3 — REMOTE → HOST: ejecuta el comando que llega en remoteSession.command.
-  // remoteSession.remoteUid sale SIEMPRE de la tabla (get_remote_session,
-  // ver remoteSession.ts) — nunca de Presence directamente, que es pública
-  // y cualquiera que conozca el sessionId podría falsear. Se descarta
-  // cualquier comando cuyo senderId no coincida; si no coincide, se pide
-  // reconfirmar remoteUid contra la tabla (refreshRemoteUid, con su propio
-  // límite de una vez cada 2s) por si el remoto real recién se unió y el
-  // comando llegó una fracción de segundo antes de que remoteUid se
-  // actualizara — el comando queda sin marcar como procesado, así que si
-  // la reconfirmación coincide, este mismo efecto lo ejecuta en la próxima
-  // pasada. commandId identifica cada envío (incluso dos pulsaciones
-  // seguidas del mismo tipo generan uno distinto), y se guarda en memoria
-  // el último procesado para no ejecutar el mismo dos veces si el listener
-  // se dispara de nuevo con el mismo valor. No se toca
-  // teleprompterEngine.ts: se reutiliza tal cual la API que playerStore ya
-  // expone.
+  // F8.3/F8.4 — REMOTE → HOST: ejecuta el comando que llega en
+  // remoteSession.command. remoteSession.remoteUid sale SIEMPRE de la tabla
+  // (get_remote_session, ver remoteSession.ts) — nunca de Presence
+  // directamente, que es pública y cualquiera que conozca el sessionId
+  // podría falsear. Se descarta cualquier comando cuyo senderId no
+  // coincida; si no coincide, se pide reconfirmar remoteUid contra la
+  // tabla (refreshRemoteUid, con su propio límite de una vez cada 2s) por
+  // si el remoto real recién se unió y el comando llegó una fracción de
+  // segundo antes de que remoteUid se actualizara — el comando queda sin
+  // marcar como procesado, así que si la reconfirmación coincide, este
+  // mismo efecto lo ejecuta en la próxima pasada. commandId identifica cada
+  // envío (incluso dos pulsaciones seguidas del mismo tipo generan uno
+  // distinto), y se guarda en memoria el último procesado para no ejecutar
+  // el mismo dos veces si el listener se dispara de nuevo con el mismo
+  // valor.
+  //
+  // F8.4 parte A agrega 'seekForward'/'seekBack'/'setSpeed', todos sujetos
+  // al mismo guard de senderId de arriba (nada nuevo que autorizar aparte).
+  // 'seekForward'/'seekBack' nunca reciben píxeles ni segundos del remoto:
+  // el remoto solo pide "un salto", y ESTE host decide cuánto es en su
+  // propia geometría, convirtiendo SEEK_SECONDS a progreso normalizado con
+  // la velocidad y cantidad de palabras reales del guion (estimateDurationSeconds,
+  // la misma fórmula que ya usa el motor internamente) y aplicándolo con
+  // engine.seekToProgress — nunca con píxeles. 'setSpeed' sí trae un valor
+  // (el wpm objetivo que ya calculó el remoto), pero clampRemoteWpm lo
+  // vuelve a validar/clampear acá y descarta el comando por completo si no
+  // es un número finito: nunca se confía en lo que manda el remoto sin
+  // revalidar.
   //
   // Límite conocido (pendiente para F8.6): los canales de Realtime son
   // públicos, así que un tercero que conozca el sessionId puede observar
@@ -262,26 +294,57 @@ function TeleprompterSession({ id }: { id: string }) {
     else if (command.type === 'pause') pause()
     else if (command.type === 'toggle') togglePlay()
     else if (command.type === 'reset') resetPlayback()
-  }, [remoteSession?.command, remoteSession?.remoteUid, remoteSessionId, refreshRemoteUid, play, pause, togglePlay, resetPlayback])
+    else if (command.type === 'seekForward' || command.type === 'seekBack') {
+      const durationSeconds = estimateDurationSeconds(wordCount, wpm)
+      if (durationSeconds > 0) {
+        const sign = command.type === 'seekForward' ? 1 : -1
+        const deltaProgress = (sign * SEEK_SECONDS) / durationSeconds
+        engine.seekToProgress(progress + deltaProgress)
+      }
+    } else if (command.type === 'setSpeed') {
+      const clamped = clampRemoteWpm(command.value)
+      if (clamped != null) setSpeed(clamped)
+    }
+  }, [
+    remoteSession?.command,
+    remoteSession?.remoteUid,
+    remoteSessionId,
+    refreshRemoteUid,
+    play,
+    pause,
+    togglePlay,
+    resetPlayback,
+    engine,
+    wordCount,
+    wpm,
+    progress,
+    setSpeed,
+  ])
 
-  // F8.3 — HOST → REMOTE: publica un snapshot de reproducción normalizado
-  // (nunca positionPx/totalPx) para que el remoto lo muestre. Es una capa de
-  // throttle propia e independiente del throttle interno de 120ms del
-  // motor (EMIT_THROTTLE_MS en teleprompterEngine.ts) — ese sigue existiendo
-  // solo para no saturar los renders de React locales; este efecto decide,
-  // aparte, cuándo vale la pena mandar un mensaje de Broadcast. Los cambios
-  // de estado importantes (play/pause/reset/finished/pausa por marcador) se publican
-  // de inmediato; mientras se reproduce y solo cambia el progreso, se
-  // publica como máximo cada PLAYBACK_PUBLISH_INTERVAL_MS. Solo corre una
-  // vez hay un remoto emparejado — antes de eso nadie lo está escuchando.
+  // F8.3/F8.4 — HOST → REMOTE: publica un snapshot de reproducción
+  // normalizado (nunca positionPx/totalPx) para que el remoto lo muestre.
+  // Es una capa de throttle propia e independiente del throttle interno de
+  // 120ms del motor (EMIT_THROTTLE_MS en teleprompterEngine.ts) — ese sigue
+  // existiendo solo para no saturar los renders de React locales; este
+  // efecto decide, aparte, cuándo vale la pena mandar un mensaje de
+  // Broadcast. Los cambios de estado importantes (play/pause/reset/
+  // finished/pausa por marcador/velocidad) se publican de inmediato;
+  // mientras se reproduce y solo cambia el progreso, se publica como
+  // máximo cada PLAYBACK_PUBLISH_INTERVAL_MS. wpm se trata como "cambio
+  // importante" (no espera el intervalo) a propósito: el remoto muestra un
+  // valor local optimista mientras mantiene presionado ±, y a los ~1s de
+  // soltar vuelve a confiar en lo que publique el host — si esa
+  // confirmación tardara hasta 1.5s en llegar, se vería "saltar" a un
+  // número viejo antes de asentarse en el real. Solo corre una vez hay un
+  // remoto emparejado — antes de eso nadie lo está escuchando.
   useEffect(() => {
     if (!remoteSessionId || !remoteSession?.remoteUid) return
     const now = Date.now()
     const prev = lastPublishRef.current
-    const statusChanged = !prev || prev.status !== status || prev.pausedByMarker !== pausedByMarker
+    const changed = !prev || prev.status !== status || prev.pausedByMarker !== pausedByMarker || prev.wpm !== wpm
     const progressDue = !prev || now - prev.publishedAt >= PLAYBACK_PUBLISH_INTERVAL_MS
-    if (!statusChanged && !progressDue) return
-    lastPublishRef.current = { status, pausedByMarker, publishedAt: now }
+    if (!changed && !progressDue) return
+    lastPublishRef.current = { status, pausedByMarker, wpm, publishedAt: now }
     publishRemotePlayback(remoteSessionId, {
       engineStatus: status,
       progress,
@@ -304,9 +367,8 @@ function TeleprompterSession({ id }: { id: string }) {
   // preparar el motor (alto desplazable, velocidad, marcadores).
   useEffect(() => {
     if (!script || !viewportRef.current || !contentRef.current) return
-    const wordCount = countWords(script.content)
     engine.attach(viewportRef.current, contentRef.current, wordCount)
-  }, [script, engine])
+  }, [script, engine, wordCount])
 
   // Recalcular geometría ante un cambio de tamaño de la ventana (p. ej. al
   // rotar el celular): el reflujo del texto puede mover dónde cae cada
@@ -521,8 +583,8 @@ function TeleprompterSession({ id }: { id: string }) {
             Velocidad (PPM)
             <input
               type="number"
-              min={40}
-              max={300}
+              min={MIN_REMOTE_WPM}
+              max={MAX_REMOTE_WPM}
               value={wpm}
               onChange={(e) => setSpeed(Number(e.target.value) || DEFAULT_WPM)}
               onKeyDown={(e) => {

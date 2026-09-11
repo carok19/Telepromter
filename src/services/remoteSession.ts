@@ -35,7 +35,29 @@ import { getSupabaseClient } from './supabase'
 
 export type RemoteSessionStatus = 'waiting' | 'paired' | 'ended'
 
-export type RemoteCommandType = 'play' | 'pause' | 'toggle' | 'reset'
+// Rango de velocidad válido — único lugar donde vive este número: tanto
+// TeleprompterPage (footer + comando remoto entrante) como RemoteControlPage
+// (botones ±/edición táctil) lo importan de acá en vez de repetirlo.
+export const MIN_REMOTE_WPM = 40
+export const MAX_REMOTE_WPM = 300
+
+// Valida y clampea un wpm recibido en un comando 'setSpeed': el host NUNCA
+// confía en el valor tal cual lo manda el remoto. Devuelve `null` si no es
+// un número finito (el comando se descarta por completo, no se aplica nada);
+// si es un número, lo clampea al rango válido en vez de descartarlo —
+// alguien manteniendo presionado + más allá del límite no debe "perder" el
+// comando, solo quedarse en el tope.
+export function clampRemoteWpm(value: number | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return Math.min(MAX_REMOTE_WPM, Math.max(MIN_REMOTE_WPM, value))
+}
+
+// F8.4 parte A agrega 'seekForward'/'seekBack' (avanzar/retroceder una
+// cantidad fija de segundos de lectura, interpretada por el HOST con su
+// propia velocidad — nunca en píxeles) y 'setSpeed' (cambiar la velocidad
+// a un wpm objetivo, que el host vuelve a clampear/validar antes de
+// aplicar; ver el `value` de RemoteCommand).
+export type RemoteCommandType = 'play' | 'pause' | 'toggle' | 'reset' | 'seekForward' | 'seekBack' | 'setSpeed'
 
 export interface RemoteCommand {
   type: RemoteCommandType
@@ -49,6 +71,10 @@ export interface RemoteCommand {
   // no coincida — así un tercero que de algún modo llegue a este canal no
   // puede inyectar comandos.
   senderId: string
+  // Solo lo usa 'setSpeed' (el wpm objetivo). El host NUNCA confía en este
+  // valor tal cual: lo descarta si no es un número finito, y lo vuelve a
+  // clampear a su propio rango permitido antes de aplicarlo.
+  value?: number
 }
 
 // Snapshot de solo lectura para el remoto: nunca incluye posición en
@@ -497,7 +523,7 @@ export async function joinSessionAsRemote(sessionId: string): Promise<JoinSessio
 // Comandos (remoto→host) y playback (host→remoto) — siempre Broadcast,
 // nunca la tabla.
 // ---------------------------------------------------------------------
-export async function sendCommand(sessionId: string, type: RemoteCommandType): Promise<void> {
+export async function sendCommand(sessionId: string, type: RemoteCommandType, value?: number): Promise<void> {
   const client = getSupabaseClient()
   if (!client) return
   const entry = ensureChannel(client, sessionId)
@@ -507,6 +533,7 @@ export async function sendCommand(sessionId: string, type: RemoteCommandType): P
     commandId: generateRandomId(),
     issuedAt: Date.now(),
     senderId: getRemoteClientId(),
+    ...(value !== undefined ? { value } : {}),
   }
   await entry.channel.send({ type: 'broadcast', event: 'command', payload: command })
 }

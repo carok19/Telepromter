@@ -36,7 +36,7 @@ interface RemoteState {
   endSession: (sessionId: string) => Promise<void>
   subscribeSession: (sessionId: string, callback: (session: RemoteSession | null) => void) => () => void
   joinSession: (sessionId: string) => Promise<JoinSessionResult>
-  sendCommand: (sessionId: string, type: RemoteCommandType) => Promise<void>
+  sendCommand: (sessionId: string, type: RemoteCommandType, value?: number) => Promise<void>
   publishPlayback: (sessionId: string, playback: RemotePlayback) => Promise<void>
   subscribeConnectivity: (sessionId: string, callback: (connected: boolean) => void) => () => void
   // Pide reconfirmar remoteUid contra la tabla (get_remote_session). La
@@ -59,7 +59,7 @@ export const useRemoteStore = create<RemoteState>(() => ({
 
   joinSession: (sessionId) => joinSessionAsRemote(sessionId),
 
-  sendCommand: (sessionId, type) => sendCommandRemote(sessionId, type),
+  sendCommand: (sessionId, type, value) => sendCommandRemote(sessionId, type, value),
 
   publishPlayback: (sessionId, playback) => publishPlaybackRemote(sessionId, playback),
 
