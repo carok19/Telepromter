@@ -9,6 +9,7 @@ import { PairingModal } from '../components/remote/PairingModal'
 import { db, type ScriptRecord } from '../db/db'
 import { countWords, DEFAULT_WPM } from '../engine/duration'
 import { TeleprompterEngine } from '../engine/teleprompterEngine'
+import { useWakeLock } from '../hooks/useWakeLock'
 import type { RemoteSession } from '../services/remoteSession'
 import { usePlayerStore } from '../stores/playerStore'
 import { useProfilesStore } from '../stores/profilesStore'
@@ -60,6 +61,11 @@ function TeleprompterSession({ id }: { id: string }) {
   const viewportRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const [engine] = useState(() => new TeleprompterEngine())
+
+  // Activo todo el tiempo que esta pantalla está montada (entrar/salir del
+  // Teleprompter, no el estado de reproducción) — leer detrás del vidrio
+  // con la pantalla apagándose sola no sirve de nada.
+  const { supported: wakeLockSupported, failed: wakeLockFailed } = useWakeLock(true)
 
   const status = usePlayerStore((s) => s.status)
   const progress = usePlayerStore((s) => s.progress)
@@ -317,6 +323,12 @@ function TeleprompterSession({ id }: { id: string }) {
           ← Volver
         </button>
         <h1 className="flex-1 truncate text-lg font-medium text-gray-100">{script.title || 'Sin título'}</h1>
+        {!wakeLockSupported && (
+          <span className="text-xs text-gray-500">La pantalla podría apagarse sola en este navegador.</span>
+        )}
+        {wakeLockSupported && wakeLockFailed && (
+          <span className="text-xs text-gray-500">No se pudo mantener la pantalla encendida (¿ahorro de batería?).</span>
+        )}
         <span className="text-xs text-gray-500">{Math.round(progress * 100)}%</span>
       </header>
 

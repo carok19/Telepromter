@@ -3,9 +3,14 @@ import { CalibrationPanel } from '../components/glassMode/CalibrationPanel'
 import { GlassTestPattern } from '../components/glassMode/GlassTestPattern'
 import { MirrorModeSelector } from '../components/glassMode/MirrorModeSelector'
 import { DEFAULT_CALIBRATION, getEffectiveColors, type CalibrationSettings } from '../engine/calibrationEngine'
+import { useWakeLock } from '../hooks/useWakeLock'
 import { useProfilesStore } from '../stores/profilesStore'
 
 export function GlassTestPage() {
+  // Activo todo el tiempo que esta pantalla está montada — calibrar
+  // detrás del vidrio con la pantalla apagándose sola tampoco sirve.
+  const { supported: wakeLockSupported, failed: wakeLockFailed } = useWakeLock(true)
+
   const profiles = useProfilesStore((s) => s.profiles)
   const loadProfiles = useProfilesStore((s) => s.loadProfiles)
   const createProfile = useProfilesStore((s) => s.createProfile)
@@ -97,6 +102,16 @@ export function GlassTestPage() {
             {panelOpen ? 'Ocultar controles' : 'Mostrar controles'}
           </button>
         </div>
+        {!wakeLockSupported && (
+          <p className="border-b border-white/10 px-4 py-2 text-xs text-gray-500">
+            La pantalla podría apagarse sola en este navegador.
+          </p>
+        )}
+        {wakeLockSupported && wakeLockFailed && (
+          <p className="border-b border-white/10 px-4 py-2 text-xs text-gray-500">
+            No se pudo mantener la pantalla encendida (¿ahorro de batería?).
+          </p>
+        )}
 
         <div
           className={`${panelOpen ? 'flex max-h-[45vh] lg:max-h-none' : 'hidden'} flex-col gap-4 overflow-y-auto lg:flex`}
