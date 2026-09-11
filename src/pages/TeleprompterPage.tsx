@@ -19,10 +19,11 @@ import { useRemoteStore } from '../stores/remoteStore'
 // localStorage a propósito, sin tocar el esquema de Dexie para esto.
 const LAST_PROFILE_STORAGE_KEY = 'robress:teleprompterProfileId'
 
-// F8.3: cota máxima de cuánto se demora en publicar el progreso a Firebase
-// mientras se reproduce (los cambios de estado discretos se publican de
-// inmediato igual, ver el efecto de publishRemotePlayback más abajo). Es
-// una capa de throttle propia, independiente de EMIT_THROTTLE_MS del motor.
+// F8.3: cota máxima de cuánto se demora en publicar el progreso al backend
+// de control remoto mientras se reproduce (los cambios de estado discretos
+// se publican de inmediato igual, ver el efecto de publishRemotePlayback
+// más abajo). Es una capa de throttle propia, independiente de
+// EMIT_THROTTLE_MS del motor.
 const PLAYBACK_PUBLISH_INTERVAL_MS = 1500
 
 // El Ghost es un hijo del mismo elemento que el motor transforma (así se
@@ -83,6 +84,7 @@ function TeleprompterSession({ id }: { id: string }) {
   const [remoteSessionId, setRemoteSessionId] = useState<string | null>(null)
   const [remoteSession, setRemoteSession] = useState<RemoteSession | null>(null)
   const [showPairingModal, setShowPairingModal] = useState(false)
+  const [remoteError, setRemoteError] = useState<string | null>(null)
   const lastCommandIdRef = useRef<string | null>(null)
   const lastPublishRef = useRef<{ status: string; pausedByMarker: boolean; publishedAt: number } | null>(null)
 
@@ -145,39 +147,44 @@ function TeleprompterSession({ id }: { id: string }) {
       setShowPairingModal(true)
       return
     }
-    const sessionId = await createRemoteSession(script?.title || 'Sin título')
-    if (sessionId) {
-      setRemoteSessionId(sessionId)
+    const result = await createRemoteSession(script?.title || 'Sin título')
+    if (result.sessionId) {
+      setRemoteSessionId(result.sessionId)
       setShowPairingModal(true)
+      setRemoteError(null)
+    } else {
+      setRemoteError(result.error ?? 'No se pudo crear la sesión de control remoto.')
     }
   }
 
   // F8.3 — REMOTE → HOST: ejecuta el comando que llega en remoteSession.command.
-  // Las reglas de Firebase (database.rules.json) ya garantizan que solo el
-  // remoteUid emparejado puede escribir ahí, así que no hace falta
-  // reverificarlo acá. commandId identifica cada envío (incluso dos
-  // pulsaciones seguidas del mismo tipo generan uno distinto), y se guarda
-  // en memoria el último procesado para no ejecutar el mismo dos veces si
-  // el listener se dispara de nuevo con el mismo valor (p. ej. al
-  // reconectar). No se toca teleprompterEngine.ts: se reutiliza tal cual la
-  // API que playerStore ya expone.
+  // Se descarta cualquier comando cuyo senderId no coincida con el remoto
+  // actualmente emparejado (remoteSession.remoteUid, derivado de Presence) —
+  // así un tercero que de algún modo llegue al canal no puede inyectar
+  // comandos. commandId identifica cada envío (incluso dos pulsaciones
+  // seguidas del mismo tipo generan uno distinto), y se guarda en memoria el
+  // último procesado para no ejecutar el mismo dos veces si el listener se
+  // dispara de nuevo con el mismo valor (p. ej. al reconectar). No se toca
+  // teleprompterEngine.ts: se reutiliza tal cual la API que playerStore ya
+  // expone.
   useEffect(() => {
     const command = remoteSession?.command
     if (!command || command.commandId === lastCommandIdRef.current) return
+    if (command.senderId !== remoteSession?.remoteUid) return
     lastCommandIdRef.current = command.commandId
     if (command.type === 'play') play()
     else if (command.type === 'pause') pause()
     else if (command.type === 'toggle') togglePlay()
     else if (command.type === 'reset') resetPlayback()
-  }, [remoteSession?.command, play, pause, togglePlay, resetPlayback])
+  }, [remoteSession?.command, remoteSession?.remoteUid, play, pause, togglePlay, resetPlayback])
 
   // F8.3 — HOST → REMOTE: publica un snapshot de reproducción normalizado
   // (nunca positionPx/totalPx) para que el remoto lo muestre. Es una capa de
   // throttle propia e independiente del throttle interno de 120ms del
   // motor (EMIT_THROTTLE_MS en teleprompterEngine.ts) — ese sigue existiendo
   // solo para no saturar los renders de React locales; este efecto decide,
-  // aparte, cuándo vale la pena escribir en Firebase. Los cambios de estado
-  // importantes (play/pause/reset/finished/pausa por marcador) se publican
+  // aparte, cuándo vale la pena mandar un mensaje de Broadcast. Los cambios
+  // de estado importantes (play/pause/reset/finished/pausa por marcador) se publican
   // de inmediato; mientras se reproduce y solo cambia el progreso, se
   // publica como máximo cada PLAYBACK_PUBLISH_INTERVAL_MS. Solo corre una
   // vez hay un remoto emparejado — antes de eso nadie lo está escuchando.
@@ -370,7 +377,7 @@ function TeleprompterSession({ id }: { id: string }) {
             type="button"
             onClick={handleRemoteControlClick}
             disabled={!remoteConfigured}
-            title={!remoteConfigured ? 'Control remoto no disponible: Firebase no está configurado.' : undefined}
+            title={!remoteConfigured ? 'Control remoto no disponible en este momento.' : undefined}
             className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {!remoteSessionId
@@ -381,6 +388,7 @@ function TeleprompterSession({ id }: { id: string }) {
                   ? 'Remoto conectado'
                   : 'Esperando remoto…'}
           </button>
+          {remoteError && <span className="text-xs text-red-400">{remoteError}</span>}
         </div>
 
         <label className="flex items-center gap-2 text-xs text-gray-500">

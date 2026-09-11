@@ -1,17 +1,18 @@
 // Store (Zustand) de la infraestructura de control remoto (F8). Mismo
 // patrón que el resto de los stores del proyecto: es una capa delgada que
-// delega toda la lógica real en los servicios (`firebase.ts`,
-// `remoteSession.ts`) y solo guarda el último resultado conocido.
+// delega toda la lógica real en el servicio (`remoteSession.ts`, que a su
+// vez habla con Supabase) y no guarda estado propio más allá de si el
+// backend está disponible.
 //
-// F8.2 lo usa desde TeleprompterPage (host), RemoteJoinPage y
-// RemoteControlPage (remoto) para el flujo de emparejamiento. F8.3 agrega
-// el envío/recepción de comandos discretos y el snapshot de reproducción,
-// reutilizando este mismo store.
+// Ojo: las páginas (TeleprompterPage, RemoteControlPage, PairingModal) solo
+// conocen esta interfaz — el backend por debajo pasó de Firebase a
+// Supabase sin que ninguna de esas páginas necesitara cambiar su lógica
+// (salvo los textos de error, ver RemoteControlPage.tsx).
 import { create } from 'zustand'
-import { isRemoteControlConfigured, signInAnonymouslyIfNeeded } from '../services/firebase'
 import {
   createSession as createSessionRemote,
   endSession as endSessionRemote,
+  getRemoteClientId,
   joinSessionAsRemote,
   publishPlayback as publishPlaybackRemote,
   sendCommand as sendCommandRemote,
@@ -22,66 +23,39 @@ import {
   type RemotePlayback,
   type RemoteSession,
 } from '../services/remoteSession'
+import { isRemoteControlConfigured } from '../services/supabase'
 
 interface RemoteState {
   configured: boolean
-  uid: string | null
-  authLoading: boolean
-  authError: string | null
+  // Ya no hay un paso de autenticación real (Supabase no lo necesita para
+  // este diseño) — se mantiene el nombre porque RemoteControlPage ya lo
+  // llama así, pero ahora solo asegura que exista un id local de cliente.
   ensureAuth: () => Promise<string | null>
-  createSession: (scriptTitle: string) => Promise<string | null>
+  createSession: (scriptTitle: string) => Promise<{ sessionId: string | null; error: string | null }>
   endSession: (sessionId: string) => Promise<void>
   subscribeSession: (sessionId: string, callback: (session: RemoteSession | null) => void) => () => void
   joinSession: (sessionId: string) => Promise<JoinSessionResult>
   sendCommand: (sessionId: string, type: RemoteCommandType) => Promise<void>
   publishPlayback: (sessionId: string, playback: RemotePlayback) => Promise<void>
-  subscribeConnectivity: (callback: (connected: boolean) => void) => () => void
+  subscribeConnectivity: (sessionId: string, callback: (connected: boolean) => void) => () => void
 }
 
-export const useRemoteStore = create<RemoteState>((set, get) => ({
+export const useRemoteStore = create<RemoteState>(() => ({
   configured: isRemoteControlConfigured(),
-  uid: null,
-  authLoading: false,
-  authError: null,
 
-  ensureAuth: async () => {
-    const existing = get().uid
-    if (existing) return existing
-    if (!isRemoteControlConfigured()) {
-      set({ authError: 'Firebase no está configurado (faltan variables de entorno).' })
-      return null
-    }
-    set({ authLoading: true, authError: null })
-    const uid = await signInAnonymouslyIfNeeded()
-    set({
-      uid,
-      authLoading: false,
-      authError: uid ? null : 'No se pudo autenticar de forma anónima.',
-    })
-    return uid
-  },
+  ensureAuth: async () => getRemoteClientId(),
 
-  createSession: async (scriptTitle) => {
-    const uid = await get().ensureAuth()
-    if (!uid) return null
-    return createSessionRemote(uid, scriptTitle)
-  },
+  createSession: (scriptTitle) => createSessionRemote(scriptTitle),
 
-  endSession: async (sessionId) => {
-    await endSessionRemote(sessionId)
-  },
+  endSession: (sessionId) => endSessionRemote(sessionId),
 
   subscribeSession: (sessionId, callback) => subscribeToSession(sessionId, callback),
 
-  joinSession: async (sessionId) => {
-    const uid = await get().ensureAuth()
-    if (!uid) return { outcome: 'error', session: null }
-    return joinSessionAsRemote(sessionId, uid)
-  },
+  joinSession: (sessionId) => joinSessionAsRemote(sessionId),
 
   sendCommand: (sessionId, type) => sendCommandRemote(sessionId, type),
 
   publishPlayback: (sessionId, playback) => publishPlaybackRemote(sessionId, playback),
 
-  subscribeConnectivity: (callback) => subscribeToConnectivity(callback),
+  subscribeConnectivity: (sessionId, callback) => subscribeToConnectivity(sessionId, callback),
 }))

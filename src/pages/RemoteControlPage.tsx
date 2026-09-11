@@ -1,7 +1,8 @@
-// Control remoto funcional (F8.3): /remote/:sessionId. Envía comandos
-// discretos (play/pause/reset) al host y muestra el snapshot de
-// reproducción que el host publica — nunca mueve nada por sí mismo, nunca
-// asume que un comando llegó solo porque se tocó el botón.
+// Control remoto funcional (F8.3, sobre Supabase Realtime desde F8-Supabase):
+// /remote/:sessionId. Envía comandos discretos (play/pause/reset) al host y
+// muestra el snapshot de reproducción que el host publica — nunca mueve
+// nada por sí mismo, nunca asume que un comando llegó solo porque se tocó
+// el botón.
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Logo } from '../components/shared/Logo'
@@ -17,7 +18,7 @@ const MESSAGES: Record<ConnectionState, string> = {
   expired: 'Sesión expirada.',
   occupied: 'Esta sesión ya tiene un control remoto conectado.',
   ended: 'Sesión finalizada.',
-  error: 'No se pudo conectar. Revisá tu conexión.',
+  error: 'No se pudo conectar.',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -40,6 +41,7 @@ export function RemoteControlPage() {
   const [state, setState] = useState<ConnectionState>(() => (configured ? 'connecting' : 'error'))
   const [session, setSession] = useState<RemoteSession | null>(null)
   const [online, setOnline] = useState(true)
+  const [errorDetail, setErrorDetail] = useState<string | null>(null)
   const sendingRef = useRef(false)
 
   useEffect(() => {
@@ -59,6 +61,7 @@ export function RemoteControlPage() {
       if (cancelled) return
       if (result.outcome !== 'joined') {
         setState(result.outcome)
+        setErrorDetail(result.errorMessage ?? null)
         return
       }
       setSession(result.session)
@@ -77,13 +80,13 @@ export function RemoteControlPage() {
     }
   }, [sessionId, configured, ensureAuth, joinSession, subscribeSession])
 
-  // Conectividad del CLIENTE con el servidor de RTDB — independiente del
-  // estado de la sesión en sí. Permite avisar "Conexión perdida" sin
+  // Conectividad de ESTE cliente con el canal de la sesión — independiente
+  // del estado de la sesión en sí. Permite avisar "Conexión perdida" sin
   // desmontar la página ni tratarlo como si el host hubiera cerrado sesión.
   useEffect(() => {
-    if (!configured) return
-    return subscribeConnectivity(setOnline)
-  }, [configured, subscribeConnectivity])
+    if (!configured || !sessionId) return
+    return subscribeConnectivity(sessionId, setOnline)
+  }, [configured, sessionId, subscribeConnectivity])
 
   async function handlePlayPause() {
     if (!sessionId || sendingRef.current) return
@@ -133,7 +136,13 @@ export function RemoteControlPage() {
               : 'text-amber-300'
         }`}
       >
-        {state === 'connected' ? (online ? 'Conectado ✓' : 'Conectado (sin conexión)') : MESSAGES[state]}
+        {state === 'connected'
+          ? online
+            ? 'Conectado ✓'
+            : 'Conectado (sin conexión)'
+          : state === 'error' && errorDetail
+            ? `${MESSAGES[state]} ${errorDetail}`
+            : MESSAGES[state]}
       </p>
 
       {state === 'connected' && (
