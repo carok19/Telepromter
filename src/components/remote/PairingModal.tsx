@@ -30,7 +30,10 @@ export function PairingModal({ sessionId, session, joinUrl, onClose }: PairingMo
   }
 
   const isEnded = session?.status === 'ended'
-  const isConnected = !isEnded && session?.remoteUid != null
+  // remoteConnected exige que el clientId trackeado en Presence coincida
+  // con el remoteUid confirmado por la tabla — no alcanza con que la tabla
+  // diga que hay un remoto emparejado (ver remoteSession.ts).
+  const isConnected = !isEnded && session?.remoteConnected === true
 
   const statusLabel = !session
     ? 'Creando sesión…'

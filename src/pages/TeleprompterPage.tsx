@@ -81,6 +81,7 @@ function TeleprompterSession({ id }: { id: string }) {
   const endRemoteSession = useRemoteStore((s) => s.endSession)
   const subscribeRemoteSession = useRemoteStore((s) => s.subscribeSession)
   const publishRemotePlayback = useRemoteStore((s) => s.publishPlayback)
+  const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
   const [remoteSessionId, setRemoteSessionId] = useState<string | null>(null)
   const [remoteSession, setRemoteSession] = useState<RemoteSession | null>(null)
   const [showPairingModal, setShowPairingModal] = useState(false)
@@ -158,25 +159,40 @@ function TeleprompterSession({ id }: { id: string }) {
   }
 
   // F8.3 — REMOTE → HOST: ejecuta el comando que llega en remoteSession.command.
-  // Se descarta cualquier comando cuyo senderId no coincida con el remoto
-  // actualmente emparejado (remoteSession.remoteUid, derivado de Presence) —
-  // así un tercero que de algún modo llegue al canal no puede inyectar
-  // comandos. commandId identifica cada envío (incluso dos pulsaciones
-  // seguidas del mismo tipo generan uno distinto), y se guarda en memoria el
-  // último procesado para no ejecutar el mismo dos veces si el listener se
-  // dispara de nuevo con el mismo valor (p. ej. al reconectar). No se toca
+  // remoteSession.remoteUid sale SIEMPRE de la tabla (get_remote_session,
+  // ver remoteSession.ts) — nunca de Presence directamente, que es pública
+  // y cualquiera que conozca el sessionId podría falsear. Se descarta
+  // cualquier comando cuyo senderId no coincida; si no coincide, se pide
+  // reconfirmar remoteUid contra la tabla (refreshRemoteUid, con su propio
+  // límite de una vez cada 2s) por si el remoto real recién se unió y el
+  // comando llegó una fracción de segundo antes de que remoteUid se
+  // actualizara — el comando queda sin marcar como procesado, así que si
+  // la reconfirmación coincide, este mismo efecto lo ejecuta en la próxima
+  // pasada. commandId identifica cada envío (incluso dos pulsaciones
+  // seguidas del mismo tipo generan uno distinto), y se guarda en memoria
+  // el último procesado para no ejecutar el mismo dos veces si el listener
+  // se dispara de nuevo con el mismo valor. No se toca
   // teleprompterEngine.ts: se reutiliza tal cual la API que playerStore ya
   // expone.
+  //
+  // Límite conocido (pendiente para F8.6): los canales de Realtime son
+  // públicos, así que un tercero que conozca el sessionId puede observar
+  // el senderId real del remoto legítimo y reenviar un comando
+  // suplantándolo. Cerrar esto requiere canales privados + autenticar al
+  // remoto ante esa RLS — no se implementa en esta corrección.
   useEffect(() => {
     const command = remoteSession?.command
     if (!command || command.commandId === lastCommandIdRef.current) return
-    if (command.senderId !== remoteSession?.remoteUid) return
+    if (command.senderId !== remoteSession?.remoteUid) {
+      if (remoteSessionId) refreshRemoteUid(remoteSessionId)
+      return
+    }
     lastCommandIdRef.current = command.commandId
     if (command.type === 'play') play()
     else if (command.type === 'pause') pause()
     else if (command.type === 'toggle') togglePlay()
     else if (command.type === 'reset') resetPlayback()
-  }, [remoteSession?.command, remoteSession?.remoteUid, play, pause, togglePlay, resetPlayback])
+  }, [remoteSession?.command, remoteSession?.remoteUid, remoteSessionId, refreshRemoteUid, play, pause, togglePlay, resetPlayback])
 
   // F8.3 — HOST → REMOTE: publica un snapshot de reproducción normalizado
   // (nunca positionPx/totalPx) para que el remoto lo muestre. Es una capa de
@@ -384,7 +400,7 @@ function TeleprompterSession({ id }: { id: string }) {
               ? 'Control remoto'
               : remoteSession?.status === 'ended'
                 ? 'Sesión cerrada'
-                : remoteSession?.remoteUid
+                : remoteSession?.remoteConnected
                   ? 'Remoto conectado'
                   : 'Esperando remoto…'}
           </button>

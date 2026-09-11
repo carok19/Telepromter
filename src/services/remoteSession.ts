@@ -14,10 +14,21 @@
 //     todo, a propósito.
 //   - Los comandos (remoto→host) y el snapshot de reproducción
 //     (host→remoto) viajan por Broadcast de Realtime, nunca por la tabla.
-//   - "Remoto conectado" se deriva de Presence — quién está trackeado en el
-//     canal ahora mismo — separado de "quién tiene el cupo" (remote_uid en
-//     la tabla, que persiste aunque el remoto pierda la conexión un
-//     instante).
+//   - Quién es "el remoto autorizado" (remoteUid) SIEMPRE sale de la tabla
+//     (get_remote_session), nunca de Presence — Presence solo se usa como
+//     disparador para volver a confirmar contra la tabla, y para saber si
+//     ese remoto ya confirmado está conectado ahora mismo
+//     (remoteConnected). Ver el bloque "Presence + autorización" más abajo.
+//
+// LÍMITE CONOCIDO (pendiente para F8.6, no se resuelve acá): los canales de
+// Realtime son públicos — cualquiera que conozca el sessionId (va en la URL
+// del QR, no es secreto) puede conectarse directo al canal y observar los
+// mensajes de broadcast "command", incluido el senderId real que usa el
+// remoto legítimo. Nada impide que ese tercero reenvíe un comando
+// suplantando ese mismo senderId. Cerrar esto del todo requiere canales
+// privados de Supabase (RLS sobre realtime.messages) + alguna forma de
+// autenticar al remoto ante esa RLS (por ejemplo, Auth anónima) — se deja
+// documentado como trabajo pendiente, no se implementa ahora.
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import type { TeleprompterStatus } from '../engine/teleprompterEngine'
 import { getSupabaseClient } from './supabase'
@@ -51,10 +62,19 @@ export interface RemotePlayback {
 }
 
 export interface RemoteSession {
-  // Id del remoto emparejado, o null si todavía no se unió nadie. Viene de
-  // Presence (¿alguien con rol "remote" está trackeado en el canal ahora
-  // mismo?), no directamente de la tabla — así refleja conexión en vivo.
+  // Id del remoto emparejado, o null si todavía no se unió nadie. SIEMPRE
+  // viene de la tabla (get_remote_session), nunca de Presence directamente
+  // — Presence es público (cualquiera que conozca el sessionId puede
+  // conectarse al canal y hacer track() sin haber pasado por
+  // join_remote_session), así que no es una fuente confiable de "quién es
+  // el remoto autorizado". Ver ensureChannel()/scheduleRemoteUidRefresh()
+  // más abajo para cómo se mantiene actualizado.
   remoteUid: string | null
+  // true solo si, ADEMÁS de lo anterior, hay un cliente trackeado en
+  // Presence con clientId === remoteUid ahora mismo. Un track() con un
+  // clientId distinto (por ejemplo alguien que entra al canal sin llamar a
+  // join_remote_session) nunca enciende esto.
+  remoteConnected: boolean
   status: RemoteSessionStatus
   // Cosmético únicamente: nunca se sube el contenido del guion.
   scriptTitle: string
@@ -112,6 +132,11 @@ interface PresencePayload {
   clientId?: string
 }
 
+interface RemoteAuthState {
+  remoteUid: string | null
+  remoteConnected: boolean
+}
+
 interface ChannelEntry {
   channel: RealtimeChannel
   lastStatus: string
@@ -119,22 +144,76 @@ interface ChannelEntry {
   commandListeners: Set<(command: RemoteCommand) => void>
   playbackListeners: Set<(playback: RemotePlayback) => void>
   endedListeners: Set<() => void>
-  presenceListeners: Set<(remoteUid: string | null) => void>
+  // Emite cada vez que cambia remoteUid (confirmado por la tabla) o
+  // remoteConnected (Presence coincidiendo con ese remoteUid).
+  remoteStateListeners: Set<(state: RemoteAuthState) => void>
+  // remoteUid confirmado por la tabla — NUNCA se pisa con un valor que
+  // venga solo de Presence. Ver scheduleRemoteUidRefresh().
+  confirmedRemoteUid: string | null
+  lastRefreshRequestedAt: number
+  refreshSeq: number
 }
 
 const channelRegistry = new Map<string, ChannelEntry>()
+
+// Punto 1 del pedido de corrección: si llega un comando con un senderId
+// que no coincide, se vuelve a confirmar contra la tabla por si el remoto
+// real recién se unió y todavía no llegó el sync de Presence — pero como
+// máximo cada REMOTE_UID_REFRESH_THROTTLE_MS, para no convertir un aluvión
+// de comandos falsos en un aluvión de llamadas a get_remote_session.
+const REMOTE_UID_REFRESH_THROTTLE_MS = 2000
 
 function channelName(sessionId: string): string {
   return `session:${sessionId}`
 }
 
-function derivePresenceRemoteUid(channel: RealtimeChannel): string | null {
+// true solo si hay un cliente trackeado en Presence con clientId
+// EXACTAMENTE igual al remoteUid ya confirmado por la tabla (punto 2 del
+// pedido de corrección) — un track() con cualquier otro clientId no cuenta,
+// aunque tenga role:"remote".
+function isRemotePresent(channel: RealtimeChannel, confirmedRemoteUid: string | null): boolean {
+  if (!confirmedRemoteUid) return false
   const state = channel.presenceState<PresencePayload>()
   for (const key in state) {
-    const remoteEntry = state[key].find((p) => p.role === 'remote')
-    if (remoteEntry) return remoteEntry.clientId ?? key
+    if (state[key].some((p) => p.role === 'remote' && p.clientId === confirmedRemoteUid)) return true
   }
-  return null
+  return false
+}
+
+function emitRemoteState(entry: ChannelEntry): void {
+  const state: RemoteAuthState = {
+    remoteUid: entry.confirmedRemoteUid,
+    remoteConnected: isRemotePresent(entry.channel, entry.confirmedRemoteUid),
+  }
+  entry.remoteStateListeners.forEach((fn) => fn(state))
+}
+
+// Vuelve a confirmar remoteUid contra la tabla (get_remote_session) — nunca
+// contra Presence. Se llama desde el sync de Presence (para detectar que un
+// remoto real se unió) y desde requestRemoteUidRefresh() (cuando el host
+// ve un senderId que no reconoce). Ignora respuestas fuera de orden
+// (refreshSeq) y, si la llamada falla, deja el último valor confirmado tal
+// cual — nunca lo borra por un error de red pasajero.
+function scheduleRemoteUidRefresh(sessionId: string, entry: ChannelEntry): void {
+  const now = Date.now()
+  if (now - entry.lastRefreshRequestedAt < REMOTE_UID_REFRESH_THROTTLE_MS) return
+  entry.lastRefreshRequestedAt = now
+  const seq = ++entry.refreshSeq
+  getSession(sessionId).then((fresh) => {
+    if (seq !== entry.refreshSeq) return // llegó una solicitud más nueva mientras esta viajaba
+    if (fresh === null) return // fallo de red/servidor: se mantiene el último remoteUid confirmado
+    entry.confirmedRemoteUid = fresh.remoteUid
+    emitRemoteState(entry)
+  })
+}
+
+// Punto 1 del pedido de corrección: expuesta para que TeleprompterPage la
+// llame cuando un comando llega con un senderId que no reconoce.
+export function requestRemoteUidRefresh(sessionId: string): void {
+  if (!getSupabaseClient()) return
+  const entry = channelRegistry.get(sessionId)
+  if (!entry) return
+  scheduleRemoteUidRefresh(sessionId, entry)
 }
 
 function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>, sessionId: string): ChannelEntry {
@@ -145,7 +224,7 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
   const commandListeners = new Set<(command: RemoteCommand) => void>()
   const playbackListeners = new Set<(playback: RemotePlayback) => void>()
   const endedListeners = new Set<() => void>()
-  const presenceListeners = new Set<(remoteUid: string | null) => void>()
+  const remoteStateListeners = new Set<(state: RemoteAuthState) => void>()
 
   const channel = client.channel(channelName(sessionId), {
     config: {
@@ -161,7 +240,10 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
     commandListeners,
     playbackListeners,
     endedListeners,
-    presenceListeners,
+    remoteStateListeners,
+    confirmedRemoteUid: null,
+    lastRefreshRequestedAt: 0,
+    refreshSeq: 0,
   }
   channelRegistry.set(sessionId, entry)
 
@@ -176,8 +258,11 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
       endedListeners.forEach((fn) => fn())
     })
     .on('presence', { event: 'sync' }, () => {
-      const remoteUid = derivePresenceRemoteUid(channel)
-      presenceListeners.forEach((fn) => fn(remoteUid))
+      // Recalcula remoteConnected con lo que ya se sabía confirmado, y de
+      // paso pide reconfirmar contra la tabla (sujeto al throttle) por si
+      // este sync es justo el de un remoto nuevo uniéndose.
+      emitRemoteState(entry)
+      scheduleRemoteUidRefresh(sessionId, entry)
     })
     .subscribe((status) => {
       entry.lastStatus = status
@@ -227,6 +312,10 @@ function rowToSession(row: SessionRow, remoteUidOverride?: string | null): Remot
   const remoteUid = remoteUidOverride !== undefined ? remoteUidOverride : row.remote_client_id
   return {
     remoteUid,
+    // Se recalcula aparte contra Presence apenas se conoce (ver
+    // subscribeToSession) — acá arranca en false porque una lectura de la
+    // tabla no sabe nada de quién está conectado ahora mismo.
+    remoteConnected: false,
     status: row.ended_at ? 'ended' : remoteUid ? 'paired' : 'waiting',
     scriptTitle: row.script_title,
     command: null,
@@ -325,11 +414,14 @@ export function subscribeToSession(
     current = { ...current, status: 'ended' }
     emit()
   }
-  const onPresence = (remoteUid: string | null) => {
+  // remoteUid acá SIEMPRE viene confirmado por la tabla (ver
+  // scheduleRemoteUidRefresh) — Presence solo aporta remoteConnected.
+  const onRemoteState = ({ remoteUid, remoteConnected }: RemoteAuthState) => {
     if (!current) return
     current = {
       ...current,
       remoteUid,
+      remoteConnected,
       status: current.status === 'ended' ? 'ended' : remoteUid ? 'paired' : 'waiting',
     }
     emit()
@@ -338,14 +430,17 @@ export function subscribeToSession(
   entry.commandListeners.add(onCommand)
   entry.playbackListeners.add(onPlayback)
   entry.endedListeners.add(onEnded)
-  entry.presenceListeners.add(onPresence)
+  entry.remoteStateListeners.add(onRemoteState)
 
   // Estado inicial desde la base (título, si ya hay un remoto registrado,
-  // si ya terminó) — a partir de acá, todo lo que cambia en vivo llega por
-  // Presence/Broadcast, nunca releyendo la tabla.
+  // si ya terminó) — a partir de acá, los cambios de remoteUid siguen
+  // saliendo de la tabla (vía scheduleRemoteUidRefresh, disparado por
+  // Presence), nunca de Presence directamente.
   getSession(sessionId).then((initial) => {
     if (closed) return
     current = initial
+    entry.confirmedRemoteUid = initial?.remoteUid ?? null
+    if (current) current.remoteConnected = isRemotePresent(entry.channel, entry.confirmedRemoteUid)
     emit()
   })
 
@@ -354,7 +449,7 @@ export function subscribeToSession(
     entry.commandListeners.delete(onCommand)
     entry.playbackListeners.delete(onPlayback)
     entry.endedListeners.delete(onEnded)
-    entry.presenceListeners.delete(onPresence)
+    entry.remoteStateListeners.delete(onRemoteState)
     releaseChannel(client, sessionId)
   }
 }

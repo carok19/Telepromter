@@ -15,6 +15,7 @@ import {
   getRemoteClientId,
   joinSessionAsRemote,
   publishPlayback as publishPlaybackRemote,
+  requestRemoteUidRefresh,
   sendCommand as sendCommandRemote,
   subscribeToConnectivity,
   subscribeToSession,
@@ -38,6 +39,11 @@ interface RemoteState {
   sendCommand: (sessionId: string, type: RemoteCommandType) => Promise<void>
   publishPlayback: (sessionId: string, playback: RemotePlayback) => Promise<void>
   subscribeConnectivity: (sessionId: string, callback: (connected: boolean) => void) => () => void
+  // Pide reconfirmar remoteUid contra la tabla (get_remote_session). La
+  // usa el host cuando llega un comando con un senderId que no reconoce,
+  // por si el remoto real recién se unió. Sin efecto si se llama más
+  // seguido que cada 2s (throttle interno en remoteSession.ts).
+  refreshRemoteUid: (sessionId: string) => void
 }
 
 export const useRemoteStore = create<RemoteState>(() => ({
@@ -58,4 +64,6 @@ export const useRemoteStore = create<RemoteState>(() => ({
   publishPlayback: (sessionId, playback) => publishPlaybackRemote(sessionId, playback),
 
   subscribeConnectivity: (sessionId, callback) => subscribeToConnectivity(sessionId, callback),
+
+  refreshRemoteUid: (sessionId) => requestRemoteUidRefresh(sessionId),
 }))
