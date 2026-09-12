@@ -12,6 +12,13 @@ interface ProfilesState {
   loadProfiles: () => Promise<void>
   createProfile: (name: string, settings: CalibrationSettings) => Promise<number>
   updateProfile: (id: number, settings: CalibrationSettings) => Promise<void>
+  // Configuración (Parte 3): renombrar es una operación aparte de
+  // updateProfile (que solo toca los valores de calibración) — mismo
+  // criterio que ya separa renameFolder de moveScriptToFolder.
+  renameProfile: (id: number, name: string) => Promise<void>
+  // A lo sumo un perfil marcado a la vez: apaga isDefault en cualquier
+  // otro que lo tuviera antes de prenderlo en este.
+  setDefaultProfile: (id: number) => Promise<void>
   deleteProfile: (id: number) => Promise<void>
 }
 
@@ -37,6 +44,26 @@ export const useProfilesStore = create<ProfilesState>((set, get) => ({
     await db.profiles.update(id, { ...settings, updatedAt })
     set({
       profiles: get().profiles.map((p) => (p.id === id ? { ...p, ...settings, updatedAt } : p)),
+    })
+  },
+
+  renameProfile: async (id, name) => {
+    const updatedAt = Date.now()
+    await db.profiles.update(id, { name, updatedAt })
+    set({ profiles: get().profiles.map((p) => (p.id === id ? { ...p, name, updatedAt } : p)) })
+  },
+
+  setDefaultProfile: async (id) => {
+    const updatedAt = Date.now()
+    await db.transaction('rw', db.profiles, async () => {
+      const previousDefault = await db.profiles.filter((p) => p.isDefault === true).toArray()
+      for (const p of previousDefault) {
+        if (p.id !== id) await db.profiles.update(p.id!, { isDefault: false })
+      }
+      await db.profiles.update(id, { isDefault: true, updatedAt })
+    })
+    set({
+      profiles: get().profiles.map((p) => ({ ...p, isDefault: p.id === id, updatedAt: p.id === id ? updatedAt : p.updatedAt })),
     })
   },
 

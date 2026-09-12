@@ -27,17 +27,20 @@ export function GlassTestPage() {
   const [showSaveAsNewDialog, setShowSaveAsNewDialog] = useState(false)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
-  // Cargar los perfiles y, si ya existe alguno guardado, aplicar el más
-  // reciente automáticamente — una sola vez al montar. Se resuelve dentro
-  // del propio .then() de la carga (no reaccionando a que `profiles` cambie
-  // en un efecto aparte) para que esto no vuelva a dispararse ni pise los
-  // cambios en curso del usuario si la lista se recarga después de guardar.
+  // Cargar los perfiles y aplicar uno automáticamente al entrar — una sola
+  // vez al montar. Se resuelve dentro del propio .then() de la carga (no
+  // reaccionando a que `profiles` cambie en un efecto aparte) para que
+  // esto no vuelva a dispararse ni pise los cambios en curso del usuario
+  // si la lista se recarga después de guardar. Preferencia: el perfil
+  // marcado como predeterminado en Configuración (Parte 3) si hay uno; si
+  // no, el más reciente, como siempre.
   useEffect(() => {
     loadProfiles().then(() => {
-      const [mostRecent] = useProfilesStore.getState().profiles
-      if (!mostRecent) return
-      setSelectedProfileId(mostRecent.id ?? null)
-      setSettings(mostRecent)
+      const profiles = useProfilesStore.getState().profiles
+      const preferred = profiles.find((p) => p.isDefault) ?? profiles[0]
+      if (!preferred) return
+      setSelectedProfileId(preferred.id ?? null)
+      setSettings(preferred)
     })
   }, [loadProfiles])
 

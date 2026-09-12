@@ -49,8 +49,12 @@ interface ScriptsState {
   saveDraft: (scriptId: number, patch: { title: string; content: string }) => Promise<void>
   // Guardado explícito de verdad: title/content pasan a `scripts`,
   // status:'saved', y se borra la fila de `drafts` — ya no hay "cambios
-  // sin guardar" hasta la próxima edición.
-  commitSave: (scriptId: number, title: string, content: string) => Promise<void>
+  // sin guardar" hasta la próxima edición. `folderId` es opcional a
+  // propósito (Parte 3, selector de carpeta al primer guardado):
+  // ausente = no tocar la carpeta que el guion ya tenía (guardados
+  // posteriores, o guion creado con carpeta por contexto); `null` = fijar
+  // "Sin carpeta"; un número = fijar esa carpeta.
+  commitSave: (scriptId: number, title: string, content: string, folderId?: number | null) => Promise<void>
   // "Descartar cambios": borra el borrador. Si el guion NUNCA se había
   // guardado (status:'draft'), también borra el guion entero — no debe
   // quedar nada en la biblioteca. Si ya estaba guardado, solo se pierde
@@ -157,10 +161,21 @@ export const useScriptsStore = create<ScriptsState>((set, get) => ({
     await db.drafts.put({ scriptId, title: patch.title, content: patch.content, updatedAt: Date.now() })
   },
 
-  commitSave: async (scriptId, title, content) => {
+  commitSave: async (scriptId, title, content, folderId) => {
     const updatedAt = Date.now()
+    const patch: { title: string; content: string; status: 'saved'; updatedAt: number; folderId?: number } = {
+      title,
+      content,
+      status: 'saved',
+      updatedAt,
+    }
+    // folderId === undefined (parámetro omitido): no tocar la carpeta que
+    // el guion ya tenía. folderId === null: "Sin carpeta" de verdad (borra
+    // la clave, mismo criterio que moveScriptToFolder). Un número: esa
+    // carpeta.
+    if (folderId !== undefined) patch.folderId = folderId ?? undefined
     await db.transaction('rw', db.scripts, db.drafts, async () => {
-      await db.scripts.update(scriptId, { title, content, status: 'saved', updatedAt })
+      await db.scripts.update(scriptId, patch)
       await db.drafts.delete(scriptId)
     })
     await get().loadScripts()

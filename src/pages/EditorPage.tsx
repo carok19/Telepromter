@@ -3,6 +3,7 @@ import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { EditorCanvas, type EditorCanvasHandle } from '../components/editor/EditorCanvas'
 import { EditorToolbar } from '../components/editor/EditorToolbar'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
+import { FolderPickerDialog } from '../components/shared/FolderPickerDialog'
 import { db, type ScriptRecord } from '../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../engine/duration'
 import { useScriptsStore } from '../stores/scriptsStore'
@@ -26,6 +27,8 @@ export function EditorPage() {
   const commitSave = useScriptsStore((s) => s.commitSave)
   const discardDraft = useScriptsStore((s) => s.discardDraft)
   const setSaveStatus = useScriptsStore((s) => s.setSaveStatus)
+  const folders = useScriptsStore((s) => s.folders)
+  const loadScripts = useScriptsStore((s) => s.loadScripts)
 
   const [script, setScript] = useState<ScriptRecord | null>(null)
   const [title, setTitle] = useState('')
@@ -38,6 +41,13 @@ export function EditorPage() {
   // maneja directamente el botón Guardar, el indicador visual y
   // useBlocker — todos necesitan re-renderizar cuando cambia.
   const [isDirty, setIsDirty] = useState(false)
+  // Parte 3: selector de carpeta al guardar. Se abre desde DOS lugares (el
+  // botón Guardar del header y el "Guardar" del aviso de salir) — en vez
+  // de dos diálogos separados, uno solo con un ref que recuerda si hay que
+  // completar la navegación pendiente (blocker.proceed()) después de
+  // elegir carpeta.
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false)
+  const pendingProceedRef = useRef(false)
 
   const canvasRef = useRef<EditorCanvasHandle>(null)
   const saveTimeoutRef = useRef<number | undefined>(undefined)
@@ -51,6 +61,13 @@ export function EditorPage() {
   const titleRef = useRef('')
   const contentRef = useRef('')
   const wordCountRef = useRef(0)
+
+  // Carpetas para el selector de la Parte 3 (FolderPickerDialog) — si se
+  // entra directo a /editor/:id sin haber pasado antes por la Biblioteca,
+  // el store todavía no las cargó.
+  useEffect(() => {
+    loadScripts()
+  }, [loadScripts])
 
   // Si se entra a /editor sin id, crear un guion nuevo (nace como
   // 'draft' — ver createScript en scriptsStore.ts) y redirigir a
@@ -141,14 +158,44 @@ export function EditorPage() {
 
   const canSave = isDirty && (title.trim() !== '' || wordCount > 0)
 
+  // Parte 3: el selector de carpeta aparece SOLO la primera vez que se
+  // guarda un guion (status:'draft' todavía — nunca pasó por Guardar) Y
+  // solo si no tiene carpeta por contexto (folderId ausente: se creó desde
+  // la Biblioteca Nivel 1, o desde el FAB de "Sin carpeta"). Si se creó
+  // desde el FAB de una carpeta real (Nivel 2), folderId ya viene puesto
+  // — se guarda ahí directo, sin preguntar. Guardados posteriores tampoco
+  // preguntan nunca: para entonces status ya es 'saved'.
+  const scriptNeedsFolderPicker = script?.status === 'draft' && script?.folderId == null
+
+  // El guardado de verdad — separado de handleSave para que el mismo
+  // código sirva tanto al flujo directo (sin preguntar carpeta) como al
+  // que vuelve acá después de elegir una en FolderPickerDialog.
+  // folderId === undefined (parámetro omitido): no toca la carpeta que el
+  // guion ya tenía.
+  const finalizeSave = useCallback(
+    async (folderId?: number | null) => {
+      if (scriptIdRef.current == null) return
+      window.clearTimeout(saveTimeoutRef.current)
+      await commitSave(scriptIdRef.current, titleRef.current, contentRef.current, folderId)
+      setIsDirty(false)
+      setSaveStatus('saved')
+      setScript((prev) =>
+        prev ? { ...prev, status: 'saved', ...(folderId !== undefined ? { folderId: folderId ?? undefined } : {}) } : prev,
+      )
+    },
+    [commitSave, setSaveStatus],
+  )
+
   const handleSave = useCallback(async () => {
     if (scriptIdRef.current == null) return
     if (titleRef.current.trim() === '' && wordCountRef.current === 0) return
-    window.clearTimeout(saveTimeoutRef.current)
-    await commitSave(scriptIdRef.current, titleRef.current, contentRef.current)
-    setIsDirty(false)
-    setSaveStatus('saved')
-  }, [commitSave, setSaveStatus])
+    if (scriptNeedsFolderPicker) {
+      pendingProceedRef.current = false
+      setFolderPickerOpen(true)
+      return
+    }
+    await finalizeSave()
+  }, [scriptNeedsFolderPicker, finalizeSave])
 
   const handleDiscard = useCallback(async () => {
     if (scriptIdRef.current == null) return
@@ -256,7 +303,11 @@ export function EditorPage() {
         </label>
       </footer>
 
-      {blocker.state === 'blocked' && (
+      {/* El diálogo de salida se OCULTA (no se cierra: blocker sigue en
+          'blocked') mientras el selector de carpeta está abierto — así
+          "Cancelar" en el selector vuelve a mostrar este mismo diálogo en
+          vez de perder la elección Guardar/Descartar/Seguir editando. */}
+      {blocker.state === 'blocked' && !folderPickerOpen && (
         <ConfirmDialog
           title="Cambios sin guardar"
           message="¿Qué querés hacer con los cambios de este guion?"
@@ -265,7 +316,17 @@ export function EditorPage() {
               label: 'Guardar',
               variant: 'primary',
               onClick: async () => {
-                await handleSave()
+                // Parte 3: acá también hace falta preguntar la carpeta si
+                // es la primera vez que se guarda un guion sin carpeta —
+                // se abre el selector y se completa blocker.proceed()
+                // recién cuando el usuario elija (o se aborta si cancela,
+                // volviendo a este mismo diálogo).
+                if (scriptNeedsFolderPicker) {
+                  pendingProceedRef.current = true
+                  setFolderPickerOpen(true)
+                  return
+                }
+                await finalizeSave()
                 blocker.proceed()
               },
             },
@@ -280,6 +341,21 @@ export function EditorPage() {
             { label: 'Seguir editando', variant: 'neutral', onClick: () => blocker.reset() },
           ]}
           onClose={() => blocker.reset()}
+        />
+      )}
+
+      {folderPickerOpen && (
+        <FolderPickerDialog
+          folders={folders}
+          onSelect={async (folderId) => {
+            setFolderPickerOpen(false)
+            await finalizeSave(folderId)
+            if (pendingProceedRef.current) {
+              pendingProceedRef.current = false
+              if (blocker.state === 'blocked') blocker.proceed()
+            }
+          }}
+          onClose={() => setFolderPickerOpen(false)}
         />
       )}
     </div>

@@ -60,6 +60,12 @@ export interface CalibrationProfileRecord extends CalibrationSettings {
   name: string
   createdAt: number
   updatedAt: number
+  // Configuración (Parte 3): a lo sumo UN perfil puede tener esto en true
+  // a la vez — setDefaultProfile en profilesStore.ts se encarga de que
+  // elegir uno nuevo apague el anterior. Ausente = no es el
+  // predeterminado (todo perfil de antes de esta fase empieza así, sin
+  // migración: nadie queda marcado por sorpresa).
+  isDefault?: boolean
 }
 
 class RobressDatabase extends Dexie {
