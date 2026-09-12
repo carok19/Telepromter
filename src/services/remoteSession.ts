@@ -165,6 +165,16 @@ export interface RemotePlayback {
   wpm: number
   pausedByMarker: boolean
   updatedAt: number
+  // B.1: cuando el host cambia de guion sin cortar el emparejamiento (la
+  // sesión sobrevive el cambio — ver TeleprompterPage.tsx), el título fijado
+  // en create_remote_session (columna script_title) queda desactualizado.
+  // No hace falta una función SQL para corregirlo — es puramente cosmético
+  // — así que se republica acá, junto al snapshot de reproducción, y
+  // subscribeToSession lo aplica sobre `scriptTitle` del lado del remoto.
+  // Opcional: mientras el guion nuevo todavía no terminó de cargar, se
+  // publica sin este campo (undefined), y subscribeToSession lo ignora en
+  // vez de borrar el título vigente.
+  scriptTitle?: string
 }
 
 export interface RemoteSession {
@@ -560,7 +570,10 @@ export function subscribeToSession(
   }
   const onPlayback = (playback: RemotePlayback) => {
     if (!current) return
-    current = { ...current, playback }
+    // B.1: scriptTitle solo viaja cuando el host ya sabe el título real del
+    // guion nuevo (ver el comentario en RemotePlayback) — si todavía no
+    // cargó, no se pisa el título vigente con undefined.
+    current = { ...current, playback, ...(playback.scriptTitle != null ? { scriptTitle: playback.scriptTitle } : {}) }
     emit()
   }
   const onCalibration = (calibration: RemoteCalibration) => {

@@ -66,6 +66,21 @@ interface RemoteState {
   activeSessionId: string | null
   activeSessionConnected: boolean
   setActiveSession: (sessionId: string | null, connected: boolean) => void
+
+  // B.1: id de la sesión de control remoto que este dispositivo tiene como
+  // HOST ahora mismo, si hay alguna — vive en el store (no en el estado
+  // local de TeleprompterPage) precisamente para sobrevivir el
+  // desmontaje/remontaje de esa página al cambiar de guion desde Mis
+  // guiones (que pasa por la ruta /guiones, hermana de /teleprompter — ver
+  // router.tsx — y por lo tanto desmonta TeleprompterPage por completo). Un
+  // useState local se perdería en ese viaje igual que antes; este store, un
+  // singleton de JS ajeno al árbol de React, es lo que realmente permite
+  // que TeleprompterPage vuelva a encontrar la MISMA sesión al reabrir un
+  // guion distinto en vez de crear una nueva y cortar el emparejamiento.
+  // Quién la cierra de verdad (al salir del teleprompter/la biblioteca por
+  // completo, no solo al pasar de una a la otra): ver RootShell.tsx.
+  hostSessionId: string | null
+  setHostSessionId: (sessionId: string | null) => void
 }
 
 export const useRemoteStore = create<RemoteState>((set) => ({
@@ -73,6 +88,9 @@ export const useRemoteStore = create<RemoteState>((set) => ({
   activeSessionId: null,
   activeSessionConnected: false,
   setActiveSession: (sessionId, connected) => set({ activeSessionId: sessionId, activeSessionConnected: connected }),
+
+  hostSessionId: null,
+  setHostSessionId: (sessionId) => set({ hostSessionId: sessionId }),
 
   ensureAuth: async () => getRemoteClientId(),
 

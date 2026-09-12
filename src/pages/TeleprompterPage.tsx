@@ -64,8 +64,73 @@ function stripPauseMarkersForGhost(html: string): string {
   return doc.body.innerHTML
 }
 
+// B.1: el ciclo de vida de la sesión de control remoto (crearla, unirse a
+// una ya existente, la suscripción en vivo, el modal de emparejamiento, el
+// error de conexión) vive ACÁ — el único nivel de este archivo que NO se
+// remonta al cambiar de guion. TeleprompterSession, más abajo, sigue
+// remontándose por completo con key={id} (motor, refs, pantalla completa,
+// calibración: todo eso debe reiniciarse con cada guion nuevo, como
+// siempre) — pero ya no arrastra consigo el emparejamiento.
+//
+// El id de la sesión en sí (hostSessionId) vive en remoteStore, no en un
+// useState de acá: cambiar de guion desde Mis guiones pasa por la ruta
+// /guiones (hermana de /teleprompter — ver router.tsx), lo que desmonta
+// TAMBIÉN a este componente. Un useState local se perdería en ese viaje
+// igual que le pasaba a TeleprompterSession antes de esta fase; el store
+// (un singleton de JS ajeno al árbol de React) es lo único que sobrevive.
+// Quién decide cuándo esa sesión quedó abandonada de verdad (a diferencia
+// de un simple paso por Mis guiones para abrir otro guion): ver
+// RootShell.tsx, que envuelve todas las rutas y por eso puede notar la
+// diferencia entre las dos situaciones.
 export function TeleprompterPage() {
   const { id } = useParams()
+
+  const remoteConfigured = useRemoteStore((s) => s.configured)
+  const createRemoteSession = useRemoteStore((s) => s.createSession)
+  const subscribeRemoteSession = useRemoteStore((s) => s.subscribeSession)
+  const setActiveRemoteSession = useRemoteStore((s) => s.setActiveSession)
+  const hostSessionId = useRemoteStore((s) => s.hostSessionId)
+  const setHostSessionId = useRemoteStore((s) => s.setHostSessionId)
+
+  const [remoteSession, setRemoteSession] = useState<RemoteSession | null>(null)
+  const [showPairingModal, setShowPairingModal] = useState(false)
+  const [remoteError, setRemoteError] = useState<string | null>(null)
+
+  // Suscripción en vivo a la sesión (F8.2). Si hostSessionId ya venía
+  // seteado desde ANTES de este montaje (se sobrevivió un cambio de guion),
+  // esto reconecta a la MISMA sesión de inmediato — no crea una nueva.
+  useEffect(() => {
+    if (!hostSessionId) return
+    return subscribeRemoteSession(hostSessionId, setRemoteSession)
+  }, [hostSessionId, subscribeRemoteSession])
+
+  // F8.6 (PWA): igual que antes, solo que ahora vive acá en vez de en
+  // TeleprompterSession — sigue reflejando exactamente lo mismo
+  // (¿hay una sesión de host activa, y está el remoto conectado ahora
+  // mismo?), sin depender de si el guion en pantalla cambió.
+  useEffect(() => {
+    setActiveRemoteSession(hostSessionId, remoteSession?.remoteConnected ?? false)
+    return () => setActiveRemoteSession(null, false)
+  }, [hostSessionId, remoteSession?.remoteConnected, setActiveRemoteSession])
+
+  // scriptTitle se recibe como argumento (no se guarda ningún estado de
+  // "guion actual" acá) porque TeleprompterSession, más abajo, ya sabe el
+  // título en el momento del click — evita duplicar la carga del guion
+  // solo para esto.
+  async function handleRemoteControlClick(scriptTitle: string) {
+    if (hostSessionId) {
+      setShowPairingModal(true)
+      return
+    }
+    const result = await createRemoteSession(scriptTitle || 'Sin título')
+    if (result.sessionId) {
+      setHostSessionId(result.sessionId)
+      setShowPairingModal(true)
+      setRemoteError(null)
+    } else {
+      setRemoteError(result.error ?? 'No se pudo crear la sesión de control remoto.')
+    }
+  }
 
   if (!id) {
     return (
@@ -73,12 +138,65 @@ export function TeleprompterPage() {
     )
   }
 
-  // key={id} fuerza un montaje nuevo (refs, motor y store limpios) cada vez
-  // que se abre un guion distinto, en vez de reutilizar la instancia previa.
-  return <TeleprompterSession key={id} id={id} />
+  return (
+    <>
+      {/* key={id} fuerza un montaje nuevo (refs, motor y store limpios) cada
+          vez que se abre un guion distinto — igual que siempre — pero ya no
+          se lleva puesto el emparejamiento, que vive arriba. */}
+      <TeleprompterSession
+        key={id}
+        id={id}
+        remoteConfigured={remoteConfigured}
+        remoteSessionId={hostSessionId}
+        remoteSession={remoteSession}
+        showPairingModal={showPairingModal}
+        remoteError={remoteError}
+        onRemoteControlClick={handleRemoteControlClick}
+      />
+      {/* Vive fuera de TeleprompterSession a propósito: el modal no formaba
+          parte del overlay con ocultado automático/toque fantasma (ver el
+          JSX de antes de esta fase — se renderizaba como hijo directo de la
+          raíz, no dentro del footer), así que moverlo acá no cambia nada
+          visible y de paso evita que sobreviva o no según el guion. */}
+      {showPairingModal && hostSessionId && (
+        <PairingModal
+          sessionId={hostSessionId}
+          session={remoteSession}
+          joinUrl={`${window.location.origin}/remote/${hostSessionId}`}
+          onClose={() => setShowPairingModal(false)}
+        />
+      )}
+    </>
+  )
 }
 
-function TeleprompterSession({ id }: { id: string }) {
+interface TeleprompterSessionProps {
+  id: string
+  // B.1: el ciclo de vida de la sesión de control remoto ahora vive en
+  // TeleprompterPage (ver más arriba) — este componente solo recibe su
+  // estado ya resuelto, exactamente como lo recibía de su propio useState
+  // antes de esta fase. El procesamiento de comandos entrantes y la
+  // publicación de playback/calibración se quedan ACÁ (dejando en
+  // TeleprompterSession el motor, refs y calibración, como se pidió):
+  // necesitan el motor y los ajustes de calibración, que siguen siendo
+  // locales a este componente.
+  remoteConfigured: boolean
+  remoteSessionId: string | null
+  remoteSession: RemoteSession | null
+  showPairingModal: boolean
+  remoteError: string | null
+  onRemoteControlClick: (scriptTitle: string) => void
+}
+
+function TeleprompterSession({
+  id,
+  remoteConfigured,
+  remoteSessionId,
+  remoteSession,
+  showPairingModal,
+  remoteError,
+  onRemoteControlClick,
+}: TeleprompterSessionProps) {
   const navigate = useNavigate()
   const [script, setScript] = useState<ScriptRecord | null | undefined>(undefined)
 
@@ -137,23 +255,24 @@ function TeleprompterSession({ id }: { id: string }) {
   const updateProfile = useProfilesStore((s) => s.updateProfile)
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null)
 
-  const remoteConfigured = useRemoteStore((s) => s.configured)
-  const createRemoteSession = useRemoteStore((s) => s.createSession)
-  const endRemoteSession = useRemoteStore((s) => s.endSession)
-  const subscribeRemoteSession = useRemoteStore((s) => s.subscribeSession)
   const publishRemotePlayback = useRemoteStore((s) => s.publishPlayback)
   const publishCalibration = useRemoteStore((s) => s.publishCalibration)
   const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
-  const setActiveRemoteSession = useRemoteStore((s) => s.setActiveSession)
-  const [remoteSessionId, setRemoteSessionId] = useState<string | null>(null)
-  const [remoteSession, setRemoteSession] = useState<RemoteSession | null>(null)
-  const [showPairingModal, setShowPairingModal] = useState(false)
-  const [remoteError, setRemoteError] = useState<string | null>(null)
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
-  const lastCommandIdRef = useRef<string | null>(null)
-  const lastPublishRef = useRef<{ status: string; pausedByMarker: boolean; wpm: number; publishedAt: number } | null>(
-    null,
-  )
+  // B.1: se inicializa con el commandId YA VISTO (si `remoteSession` llega
+  // con uno, porque este componente se está remontando tras un cambio de
+  // guion con la sesión todavía viva) en vez de `null` — si no, el guard de
+  // "comando ya procesado" de más abajo no reconocería ese último comando
+  // como viejo, y se volvería a ejecutar una vez de más justo al abrir el
+  // guion nuevo.
+  const lastCommandIdRef = useRef<string | null>(remoteSession?.command?.commandId ?? null)
+  const lastPublishRef = useRef<{
+    status: string
+    pausedByMarker: boolean
+    wpm: number
+    scriptTitle: string | undefined
+    publishedAt: number
+  } | null>(null)
   // Feature A (barra de progreso arrastrable): tras aplicar un
   // 'seekToProgress', el remoto necesita ver la nueva posición de inmediato
   // (no esperar hasta PLAYBACK_PUBLISH_INTERVAL_MS) para que soltar el dedo
@@ -328,47 +447,6 @@ function TeleprompterSession({ id }: { id: string }) {
     }
   }, [engine, liveSettings])
 
-  // Suscripción en vivo a la sesión de control remoto (F8.2), si existe una
-  // creada por este host. No tiene relación con la reproducción: solo se
-  // usa para reflejar "esperando remoto" / "remoto conectado" en la UI.
-  useEffect(() => {
-    if (!remoteSessionId) return
-    return subscribeRemoteSession(remoteSessionId, setRemoteSession)
-  }, [remoteSessionId, subscribeRemoteSession])
-
-  // Si el host abandona esta sesión de Teleprompter con un control remoto
-  // activo, se cierra: el remoto debe verlo como "Sesión finalizada" en vez
-  // de quedar "conectado" a un host que ya no está en esta pantalla.
-  useEffect(() => {
-    return () => {
-      if (remoteSessionId) endRemoteSession(remoteSessionId)
-    }
-  }, [remoteSessionId, endRemoteSession])
-
-  // F8.6 (PWA): refleja esta sesión en remoteStore para que
-  // usePwaUpdate.ts (montado fuera de esta pantalla) sepa que hay un
-  // control remoto activo y no recargue la app en medio de un
-  // emparejamiento.
-  useEffect(() => {
-    setActiveRemoteSession(remoteSessionId, remoteSession?.remoteConnected ?? false)
-    return () => setActiveRemoteSession(null, false)
-  }, [remoteSessionId, remoteSession?.remoteConnected, setActiveRemoteSession])
-
-  async function handleRemoteControlClick() {
-    if (remoteSessionId) {
-      setShowPairingModal(true)
-      return
-    }
-    const result = await createRemoteSession(script?.title || 'Sin título')
-    if (result.sessionId) {
-      setRemoteSessionId(result.sessionId)
-      setShowPairingModal(true)
-      setRemoteError(null)
-    } else {
-      setRemoteError(result.error ?? 'No se pudo crear la sesión de control remoto.')
-    }
-  }
-
   // F8.3/F8.4 — REMOTE → HOST: ejecuta el comando que llega en
   // remoteSession.command. remoteSession.remoteUid sale SIEMPRE de la tabla
   // (get_remote_session, ver remoteSession.ts) — nunca de Presence
@@ -489,25 +567,50 @@ function TeleprompterSession({ id }: { id: string }) {
   // confirmación tardara hasta 1.5s en llegar, se vería "saltar" a un
   // número viejo antes de asentarse en el real. Solo corre una vez hay un
   // remoto emparejado — antes de eso nadie lo está escuchando.
+  //
+  // B.1: script?.title también cuenta como "cambio importante" — es lo que
+  // hace que, al cambiar de guion con la sesión ya emparejada (sobrevive
+  // gracias a TeleprompterPage), el remoto reciba el título nuevo de
+  // inmediato en vez de seguir mostrando el del guion anterior. En el
+  // primerísimo render tras el remontaje `script` todavía es `undefined`
+  // (se carga async); esa primera publicación sale sin scriptTitle
+  // (subscribeToSession la ignora, ver remoteSession.ts) y la segunda,
+  // apenas el guion carga y el motor se adjunta (status pasa a 'ready'),
+  // ya lo lleva.
   useEffect(() => {
     if (!remoteSessionId || !remoteSession?.remoteUid) return
     const now = Date.now()
     const prev = lastPublishRef.current
     const forceImmediate = forceImmediatePublishRef.current
     const changed =
-      !prev || prev.status !== status || prev.pausedByMarker !== pausedByMarker || prev.wpm !== wpm || forceImmediate
+      !prev ||
+      prev.status !== status ||
+      prev.pausedByMarker !== pausedByMarker ||
+      prev.wpm !== wpm ||
+      prev.scriptTitle !== script?.title ||
+      forceImmediate
     const progressDue = !prev || now - prev.publishedAt >= PLAYBACK_PUBLISH_INTERVAL_MS
     if (!changed && !progressDue) return
     forceImmediatePublishRef.current = false
-    lastPublishRef.current = { status, pausedByMarker, wpm, publishedAt: now }
+    lastPublishRef.current = { status, pausedByMarker, wpm, scriptTitle: script?.title, publishedAt: now }
     publishRemotePlayback(remoteSessionId, {
       engineStatus: status,
       progress,
       wpm,
       pausedByMarker,
       updatedAt: now,
+      scriptTitle: script?.title,
     })
-  }, [remoteSessionId, remoteSession?.remoteUid, status, progress, wpm, pausedByMarker, publishRemotePlayback])
+  }, [
+    remoteSessionId,
+    remoteSession?.remoteUid,
+    status,
+    progress,
+    wpm,
+    pausedByMarker,
+    script?.title,
+    publishRemotePlayback,
+  ])
 
   // F8.4 parte B — HOST → REMOTE: publica el snapshot de calibración
   // vigente (lo que el host efectivamente tiene aplicado, nunca lo que un
@@ -779,7 +882,7 @@ function TeleprompterSession({ id }: { id: string }) {
             </button>
             <button
               type="button"
-              onClick={handleRemoteControlClick}
+              onClick={() => onRemoteControlClick(script.title || 'Sin título')}
               disabled={!remoteConfigured}
               title={!remoteConfigured ? 'Control remoto no disponible en este momento.' : undefined}
               className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
@@ -836,15 +939,6 @@ function TeleprompterSession({ id }: { id: string }) {
           <span className="text-xs text-gray-500">{statusLabel}</span>
         </footer>
       </div>
-
-      {showPairingModal && remoteSessionId && (
-        <PairingModal
-          sessionId={remoteSessionId}
-          session={remoteSession}
-          joinUrl={`${window.location.origin}/remote/${remoteSessionId}`}
-          onClose={() => setShowPairingModal(false)}
-        />
-      )}
     </div>
   )
 }
