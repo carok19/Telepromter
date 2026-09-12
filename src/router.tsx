@@ -1,8 +1,8 @@
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { Layout } from './components/shared/Layout'
 import { RootShell } from './components/shared/RootShell'
-import { HomePage } from './pages/HomePage'
 import { LibraryPage } from './pages/LibraryPage'
+import { FolderPage } from './pages/FolderPage'
 import { EditorPage } from './pages/EditorPage'
 import { TeleprompterPage } from './pages/TeleprompterPage'
 import { GlassTestPage } from './pages/GlassTestPage'
@@ -23,8 +23,13 @@ export const router = createBrowserRouter([
         path: '/',
         element: <Layout />,
         children: [
-          { index: true, element: <HomePage /> },
+          // Rediseño de Biblioteca: la app abre siempre en la cuadrícula de
+          // carpetas (Nivel 1), nunca en una pantalla de bienvenida aparte.
+          { index: true, element: <Navigate to="/guiones" replace /> },
           { path: 'guiones', element: <LibraryPage /> },
+          // Nivel 2: contenido de una carpeta. :folderId es un número, o el
+          // literal 'sin-carpeta' para el cajón fijo (ver FolderPage.tsx).
+          { path: 'guiones/:folderId', element: <FolderPage /> },
           { path: 'editor', element: <EditorPage /> },
           { path: 'editor/:id', element: <EditorPage /> },
           { path: 'glass-test', element: <GlassTestPage /> },

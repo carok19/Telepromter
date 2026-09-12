@@ -1,11 +1,18 @@
+// Biblioteca — Nivel 1 del rediseño: cuadrícula de carpetas (nunca la
+// lista de guiones directamente, eso es FolderPage.tsx = Nivel 2). El
+// buscador acá busca DOS cosas a la vez: nombres de carpeta (filtra la
+// cuadrícula de arriba) y títulos de guion en TODA la biblioteca sin
+// importar la carpeta (los muestra aparte, debajo, cada uno con su
+// carpeta indicada) — si no, no habría forma de buscar en toda la app
+// desde acá, ya que esta pantalla ya no lista guiones sueltos.
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ConfirmDialog } from '../components/shared/ConfirmDialog'
+import logo from '../assets/logo.svg'
+import { FolderCard } from '../components/library/FolderCard'
+import { FabMenu } from '../components/shared/FabMenu'
 import { PromptDialog } from '../components/shared/PromptDialog'
-import { FolderTabs, type FolderFilter } from '../components/library/FolderTabs'
-import { ScriptCard } from '../components/library/ScriptCard'
-import type { FolderRecord } from '../db/db'
-import { extractTextPreview } from '../engine/textPreview'
+import { FileTextIcon, SettingsIcon } from '../components/shared/Icons'
+import { formatRelativeDate } from '../engine/relativeDate'
 import { useScriptsStore } from '../stores/scriptsStore'
 
 type SortOption = 'recientes' | 'antiguos' | 'titulo'
@@ -16,48 +23,15 @@ const SORT_OPTIONS: Array<[SortOption, string]> = [
   ['titulo', 'A-Z'],
 ]
 
-// Carpetas: recuerda la última abierta entre visitas a Mis guiones, igual
-// que TeleprompterPage ya hace con el último perfil de calibración
-// elegido (robress:teleprompterProfileId) — una preferencia liviana de UI,
-// no datos del dominio, así que localStorage y no Dexie.
-const LAST_FOLDER_STORAGE_KEY = 'robress:lastLibraryFolder'
-
-function readStoredFolder(): FolderFilter {
-  try {
-    const stored = window.localStorage.getItem(LAST_FOLDER_STORAGE_KEY)
-    if (stored === 'all' || stored === 'none') return stored
-    if (stored) {
-      const id = Number(stored)
-      if (Number.isFinite(id)) return id
-    }
-  } catch {
-    // localStorage puede no estar disponible (modo privado, permisos) —
-    // se sigue con 'all' en memoria, sin romper la página por esto.
-  }
-  return 'all'
+// folderId `null` = el cajón fijo "Sin carpeta" (no una fila real de la
+// tabla `folders`) — mismo criterio que ya usaba FolderTabs.
+interface FolderSummary {
+  folderId: number | null
+  name: string
+  scriptCount: number
+  draftCount: number
+  updatedAt: number | null
 }
-
-function storeFolder(filter: FolderFilter) {
-  try {
-    window.localStorage.setItem(LAST_FOLDER_STORAGE_KEY, String(filter))
-  } catch {
-    // Igual que arriba: si no se pudo guardar, simplemente no se recuerda
-    // la próxima vez — no es motivo para romper nada.
-  }
-}
-
-// Reemplaza window.prompt/confirm (ver ConfirmDialog/PromptDialog): un
-// único estado describe cuál diálogo está abierto, si alguno. El borrado
-// de carpetas necesita DOS pasos ('deleteFolderChoice' -> opcionalmente
-// 'deleteFolderConfirm') porque la opción destructiva debe pedir una
-// confirmación aparte, más seria que la de simplemente mover los guiones.
-type DialogState =
-  | { type: 'none' }
-  | { type: 'createFolder' }
-  | { type: 'renameFolder'; folder: FolderRecord }
-  | { type: 'deleteScript'; scriptId: number }
-  | { type: 'deleteFolderChoice'; folder: FolderRecord; count: number }
-  | { type: 'deleteFolderConfirm'; folder: FolderRecord; count: number }
 
 export function LibraryPage() {
   const navigate = useNavigate()
@@ -67,228 +41,174 @@ export function LibraryPage() {
   const loading = useScriptsStore((s) => s.loading)
   const loadScripts = useScriptsStore((s) => s.loadScripts)
   const createScript = useScriptsStore((s) => s.createScript)
-  const removeScript = useScriptsStore((s) => s.removeScript)
-  const duplicateScript = useScriptsStore((s) => s.duplicateScript)
-  const moveScriptToFolder = useScriptsStore((s) => s.moveScriptToFolder)
   const createFolder = useScriptsStore((s) => s.createFolder)
-  const renameFolder = useScriptsStore((s) => s.renameFolder)
-  const deleteFolder = useScriptsStore((s) => s.deleteFolder)
 
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortOption>('recientes')
-  const [selectedFolder, setSelectedFolder] = useState<FolderFilter>(() => readStoredFolder())
-  // Mientras se busca, permite ignorar la carpeta seleccionada y buscar en
-  // TODOS los guiones — sin esto, buscar algo que está en otra carpeta
-  // parecería "no existe". Se resetea cada vez que se borra el término de
-  // búsqueda, para no dejarlo prendido por accidente la próxima vez que se
-  // busca algo nuevo dentro de una carpeta.
-  const [searchAllFolders, setSearchAllFolders] = useState(false)
-  const [dialog, setDialog] = useState<DialogState>({ type: 'none' })
+  const [showCreateFolder, setShowCreateFolder] = useState(false)
 
   useEffect(() => {
     loadScripts()
   }, [loadScripts])
 
-  // Si la carpeta recordada ya no existe (se borró en otra pestaña, o el
-  // valor guardado quedó de una versión vieja), se trata como "Todos" —
-  // derivado en el render en vez de "corregir" selectedFolder con un
-  // setState en un efecto (evita un ciclo de render extra). Mientras
-  // `loading` sigue en true, `folders` todavía puede estar vacío sin que
-  // eso signifique que la carpeta no existe — no se descarta todavía.
-  const selectedFolderExists =
-    loading || typeof selectedFolder !== 'number' || folders.some((f) => f.id === selectedFolder)
-  const effectiveFolder: FolderFilter = selectedFolderExists ? selectedFolder : 'all'
+  // Un resumen por carpeta (conteos + última actividad) que alcanza tanto
+  // para las carpetas reales como para el cajón fijo "Sin carpeta" — este
+  // último se arma igual que los demás pero sin una fila en `folders`, y
+  // se omite por completo si no tiene ni guiones ni borradores (pedido
+  // explícito: no ocupar espacio con un cajón vacío).
+  const folderSummaries = useMemo<FolderSummary[]>(() => {
+    const real = folders.map((folder): FolderSummary => {
+      const folderScripts = scripts.filter((s) => s.folderId === folder.id)
+      const folderDrafts = pendingDrafts.filter((d) => d.script.folderId === folder.id)
+      const lastActivity = Math.max(
+        folder.updatedAt,
+        ...folderScripts.map((s) => s.updatedAt),
+        ...folderDrafts.map((d) => d.draft.updatedAt),
+      )
+      return {
+        folderId: folder.id!,
+        name: folder.name,
+        scriptCount: folderScripts.length,
+        draftCount: folderDrafts.length,
+        updatedAt: lastActivity,
+      }
+    })
 
-  function handleSelectFolder(filter: FolderFilter) {
-    setSelectedFolder(filter)
-    storeFolder(filter)
-    setSearchAllFolders(false)
-  }
+    const sinCarpetaScripts = scripts.filter((s) => s.folderId == null)
+    const sinCarpetaDrafts = pendingDrafts.filter((d) => d.script.folderId == null)
+    if (sinCarpetaScripts.length === 0 && sinCarpetaDrafts.length === 0) return real
 
-  const countAll = scripts.length
-  const countNone = useMemo(() => scripts.filter((s) => s.folderId == null).length, [scripts])
-  const countByFolder = useMemo(() => {
-    const map = new Map<number, number>()
-    for (const s of scripts) {
-      if (s.folderId == null) continue
-      map.set(s.folderId, (map.get(s.folderId) ?? 0) + 1)
+    const sinCarpeta: FolderSummary = {
+      folderId: null,
+      name: 'Sin carpeta',
+      scriptCount: sinCarpetaScripts.length,
+      draftCount: sinCarpetaDrafts.length,
+      updatedAt: Math.max(0, ...sinCarpetaScripts.map((s) => s.updatedAt), ...sinCarpetaDrafts.map((d) => d.draft.updatedAt)),
     }
-    return map
-  }, [scripts])
+    return [sinCarpeta, ...real]
+  }, [folders, scripts, pendingDrafts])
 
-  const searchTerm = search.trim().toLowerCase()
-  // "Todos" ya busca en todo — el toggle de "buscar en todas" solo tiene
-  // sentido (y solo se muestra) cuando hay una carpeta específica elegida.
-  const effectivelySearchingAllFolders = effectiveFolder === 'all' || searchAllFolders
+  const term = search.trim().toLowerCase()
 
-  const visibleScripts = useMemo(() => {
-    const withinFolder = effectivelySearchingAllFolders
-      ? scripts
-      : scripts.filter((s) => (effectiveFolder === 'none' ? s.folderId == null : s.folderId === effectiveFolder))
-    const filtered = searchTerm ? withinFolder.filter((s) => s.title.toLowerCase().includes(searchTerm)) : withinFolder
+  const visibleFolders = useMemo(() => {
+    const filtered = term ? folderSummaries.filter((f) => f.name.toLowerCase().includes(term)) : folderSummaries
     const sorted = [...filtered]
-    if (sort === 'recientes') sorted.sort((a, b) => b.updatedAt - a.updatedAt)
-    else if (sort === 'antiguos') sorted.sort((a, b) => a.updatedAt - b.updatedAt)
-    else sorted.sort((a, b) => a.title.localeCompare(b.title))
+    if (sort === 'titulo') sorted.sort((a, b) => a.name.localeCompare(b.name))
+    else if (sort === 'antiguos') sorted.sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0))
+    else sorted.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     return sorted
-  }, [scripts, searchTerm, sort, effectiveFolder, effectivelySearchingAllFolders])
+  }, [folderSummaries, term, sort])
 
-  async function handleCreate() {
-    // Si hay una carpeta real elegida (no "Todos"/"Sin carpeta"), el guion
-    // nuevo se crea ahí directamente.
-    const folderId = typeof effectiveFolder === 'number' ? effectiveFolder : undefined
-    const id = await createScript(undefined, folderId)
+  // Guiones encontrados en CUALQUIER carpeta (nunca borradores: `scripts`
+  // ya viene filtrado a solo guardados) — solo se calcula/muestra mientras
+  // hay término de búsqueda.
+  const matchingScripts = useMemo(() => {
+    if (!term) return []
+    const folderNameById = new Map(folders.map((f) => [f.id!, f.name]))
+    return scripts
+      .filter((s) => s.title.toLowerCase().includes(term))
+      .map((s) => ({
+        id: s.id!,
+        title: s.title || 'Sin título',
+        folderName: s.folderId != null ? (folderNameById.get(s.folderId) ?? 'Sin carpeta') : 'Sin carpeta',
+      }))
+  }, [scripts, folders, term])
+
+  async function handleCreateScript() {
+    const id = await createScript()
     navigate(`/editor/${id}`)
   }
 
-  function closeDialog() {
-    setDialog({ type: 'none' })
-  }
-
-  function handleDelete(id: number) {
-    setDialog({ type: 'deleteScript', scriptId: id })
-  }
-
-  function handleCreateFolder() {
-    setDialog({ type: 'createFolder' })
-  }
-
-  function handleRenameFolder(folder: FolderRecord) {
-    setDialog({ type: 'renameFolder', folder })
-  }
-
-  function handleDeleteFolder(folder: FolderRecord) {
-    const count = countByFolder.get(folder.id!) ?? 0
-    setDialog({ type: 'deleteFolderChoice', folder, count })
-  }
-
-  async function finishDeleteFolder(folder: FolderRecord, mode: 'move' | 'delete') {
-    await deleteFolder(folder.id!, mode)
-    if (selectedFolder === folder.id) handleSelectFolder('all')
-    closeDialog()
-  }
-
   return (
-    <div className="mx-auto max-w-4xl p-8">
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-gray-100">Mis guiones</h1>
+    <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-5 bg-[#0b0c10] px-4 py-4 text-gray-100">
+      <header className="flex items-center justify-between">
+        <span className="h-9 w-9" aria-hidden="true" />
+        <img src={logo} alt="Robress Teleprompter" width={36} height={36} className="rounded-lg" />
         <button
           type="button"
-          onClick={handleCreate}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          onClick={() => navigate('/configuracion')}
+          aria-label="Configuración"
+          className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-[#12151c] text-gray-300 hover:bg-white/5"
         >
-          + Nuevo guion
+          <SettingsIcon className="h-4 w-4" />
         </button>
-      </div>
+      </header>
 
-      {/* Guardado explícito: un guion (nuevo o ya guardado) con una edición
-          pendiente que nunca pasó por "Guardar" ni "Descartar" — p. ej. se
-          cerró la pestaña de golpe. Sin esto quedaría invisible para
-          siempre (no aparece en la lista de abajo, que solo muestra
-          guiones guardados), que para el usuario es lo mismo que perdido. */}
-      {pendingDrafts.length > 0 && (
-        <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
-          <p className="text-sm font-medium text-amber-300">
-            {pendingDrafts.length === 1
-              ? 'Tenés 1 borrador sin guardar:'
-              : `Tenés ${pendingDrafts.length} borradores sin guardar:`}
-          </p>
-          <div className="mt-2 flex flex-col gap-1">
-            {pendingDrafts.map(({ script: draftScript, draft }) => {
-              // Título vacío: con varios borradores sin título, "Sin
-              // título" repetido no ayudaría a distinguir cuál es cuál —
-              // se usa un fragmento del contenido en su lugar, igual que
-              // ScriptCard ya hace para sus tarjetas.
-              const label = draft.title || draftScript.title || extractTextPreview(draft.content, 60) || 'Sin título'
-              return (
-                <button
-                  key={draftScript.id}
-                  type="button"
-                  onClick={() => navigate(`/editor/${draftScript.id}`)}
-                  className="truncate text-left text-sm text-amber-200 hover:underline"
-                >
-                  {label}
-                  <span className="ml-2 text-xs text-amber-400/70">
-                    {new Date(draft.updatedAt).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' })}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
+      <h1 className="text-2xl font-semibold text-gray-100">Guiones &amp; Carpetas</h1>
 
-      <FolderTabs
-        folders={folders}
-        countAll={countAll}
-        countNone={countNone}
-        countByFolder={countByFolder}
-        selected={effectiveFolder}
-        onSelect={handleSelectFolder}
-        onCreateFolder={handleCreateFolder}
-        onRenameFolder={handleRenameFolder}
-        onDeleteFolder={handleDeleteFolder}
-      />
-
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      <div className="flex items-center gap-2">
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar guiones..."
-          className="w-64 rounded-md border border-white/10 bg-[#0f1117] px-3 py-2 text-sm text-gray-100 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+          placeholder="Buscar guiones y carpetas..."
+          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#12151c] px-3 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
         />
-        {effectiveFolder !== 'all' && search && (
-          <label className="flex items-center gap-1.5 text-xs text-gray-400">
-            <input
-              type="checkbox"
-              checked={searchAllFolders}
-              onChange={(e) => setSearchAllFolders(e.target.checked)}
-              className="accent-blue-500"
-            />
-            Buscar en todas las carpetas
-          </label>
-        )}
-        <div className="flex gap-1 rounded-md border border-white/10 bg-[#0f1117] p-1">
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortOption)}
+          className="shrink-0 rounded-lg border border-white/10 bg-[#12151c] px-2.5 py-2.5 text-sm text-gray-300 focus:border-blue-500 focus:outline-none"
+        >
           {SORT_OPTIONS.map(([value, label]) => (
-            <button
-              type="button"
-              key={value}
-              onClick={() => setSort(value)}
-              className={`rounded px-3 py-1 text-sm transition-colors ${
-                sort === value ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
-              }`}
-            >
+            <option key={value} value={value}>
               {label}
-            </button>
+            </option>
           ))}
-        </div>
+        </select>
       </div>
 
       {loading && <p className="text-sm text-gray-500">Cargando...</p>}
 
-      {!loading && visibleScripts.length === 0 && (
+      {!loading && visibleFolders.length === 0 && matchingScripts.length === 0 && (
         <p className="text-sm text-gray-500">
-          {search ? 'No se encontraron guiones con ese título.' : 'Todavía no tienes guiones. Crea el primero.'}
+          {term
+            ? 'No se encontraron carpetas ni guiones con ese término.'
+            : 'Todavía no tenés guiones ni carpetas. Creá el primero con el botón +.'}
         </p>
       )}
 
-      <div className="flex flex-col gap-3">
-        {visibleScripts.map((script) => (
-          <ScriptCard
-            key={script.id}
-            script={script}
-            folders={folders}
-            onOpen={() => navigate(`/editor/${script.id}`)}
-            onOpenTeleprompter={() => navigate(`/teleprompter/${script.id}`)}
-            onDuplicate={() => duplicateScript(script.id!)}
-            onDelete={() => handleDelete(script.id!)}
-            onMoveToFolder={(folderId) => moveScriptToFolder(script.id!, folderId)}
-          />
-        ))}
-      </div>
+      {visibleFolders.length > 0 && (
+        <div className="grid grid-cols-2 gap-3">
+          {visibleFolders.map((folder) => (
+            <FolderCard
+              key={folder.folderId ?? 'sin-carpeta'}
+              name={folder.name}
+              scriptCount={folder.scriptCount}
+              draftCount={folder.draftCount}
+              updatedLabel={folder.updatedAt ? formatRelativeDate(folder.updatedAt) : null}
+              onOpen={() => navigate(`/guiones/${folder.folderId ?? 'sin-carpeta'}`)}
+            />
+          ))}
+        </div>
+      )}
 
-      {dialog.type === 'createFolder' && (
+      {term && (
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+            {matchingScripts.length > 0 ? 'Guiones encontrados' : 'Sin guiones encontrados'}
+          </p>
+          <div className="flex flex-col gap-2">
+            {matchingScripts.map((result) => (
+              <button
+                key={result.id}
+                type="button"
+                onClick={() => navigate(`/teleprompter/${result.id}`)}
+                className="flex items-center gap-3 rounded-lg border border-white/10 bg-[#12151c] px-3 py-2.5 text-left transition-colors hover:border-blue-500/40"
+              >
+                <FileTextIcon className="h-4 w-4 shrink-0 text-blue-400" />
+                <span className="min-w-0 flex-1 truncate text-sm text-gray-100">{result.title}</span>
+                <span className="shrink-0 rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-500">
+                  {result.folderName}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <FabMenu onNewScript={handleCreateScript} onNewFolder={() => setShowCreateFolder(true)} />
+
+      {showCreateFolder && (
         <PromptDialog
           title="Nueva carpeta"
           label="Nombre de la carpeta"
@@ -296,102 +216,11 @@ export function LibraryPage() {
           confirmLabel="Crear"
           onConfirm={(name) => {
             // Nombres duplicados: se permiten a propósito, sin avisar —
-            // mismo criterio que ya rige el título de los guiones (tampoco
-            // es único), y dos cuentas de TikTok pueden compartir
-            // legítimamente un nombre de fantasía.
+            // mismo criterio que ya rige el título de los guiones.
             createFolder(name)
-            closeDialog()
+            setShowCreateFolder(false)
           }}
-          onClose={closeDialog}
-        />
-      )}
-
-      {dialog.type === 'renameFolder' && (
-        <PromptDialog
-          title="Renombrar carpeta"
-          label="Nombre de la carpeta"
-          initialValue={dialog.folder.name}
-          confirmLabel="Guardar"
-          onConfirm={(name) => {
-            if (name !== dialog.folder.name) renameFolder(dialog.folder.id!, name)
-            closeDialog()
-          }}
-          onClose={closeDialog}
-        />
-      )}
-
-      {dialog.type === 'deleteScript' && (
-        <ConfirmDialog
-          title="Eliminar guion"
-          message="Esta acción no se puede deshacer."
-          actions={[
-            { label: 'Cancelar', variant: 'neutral', onClick: closeDialog },
-            {
-              label: 'Eliminar',
-              variant: 'danger',
-              onClick: async () => {
-                await removeScript(dialog.scriptId)
-                closeDialog()
-              },
-            },
-          ]}
-          onClose={closeDialog}
-        />
-      )}
-
-      {dialog.type === 'deleteFolderChoice' &&
-        (dialog.count === 0 ? (
-          <ConfirmDialog
-            title={`Eliminar "${dialog.folder.name}"`}
-            message="Esta carpeta no tiene guiones dentro."
-            actions={[
-              { label: 'Cancelar', variant: 'neutral', onClick: closeDialog },
-              {
-                label: 'Eliminar carpeta',
-                variant: 'danger',
-                onClick: () => finishDeleteFolder(dialog.folder, 'move'),
-              },
-            ]}
-            onClose={closeDialog}
-          />
-        ) : (
-          <ConfirmDialog
-            title={`Eliminar "${dialog.folder.name}"`}
-            message={`Tiene ${dialog.count} ${dialog.count === 1 ? 'guion' : 'guiones'}. Elegí qué hacer con ${
-              dialog.count === 1 ? 'él' : 'ellos'
-            }.`}
-            actions={[
-              { label: 'Cancelar', variant: 'neutral', onClick: closeDialog },
-              {
-                label: 'Mover a "Sin carpeta" y eliminar la carpeta',
-                variant: 'primary',
-                onClick: () => finishDeleteFolder(dialog.folder, 'move'),
-              },
-              {
-                label: `Eliminar la carpeta y sus ${dialog.count} guiones`,
-                variant: 'danger',
-                onClick: () => setDialog({ type: 'deleteFolderConfirm', folder: dialog.folder, count: dialog.count }),
-              },
-            ]}
-            onClose={closeDialog}
-          />
-        ))}
-
-      {dialog.type === 'deleteFolderConfirm' && (
-        <ConfirmDialog
-          title="¿Eliminar definitivamente?"
-          message={`Se borrarán la carpeta "${dialog.folder.name}" y sus ${dialog.count} ${
-            dialog.count === 1 ? 'guion' : 'guiones'
-          }. Esta acción NO se puede deshacer.`}
-          actions={[
-            { label: 'Cancelar', variant: 'neutral', onClick: closeDialog },
-            {
-              label: 'Eliminar para siempre',
-              variant: 'danger',
-              onClick: () => finishDeleteFolder(dialog.folder, 'delete'),
-            },
-          ]}
-          onClose={closeDialog}
+          onClose={() => setShowCreateFolder(false)}
         />
       )}
     </div>
