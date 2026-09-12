@@ -128,16 +128,24 @@ export function ScriptCard({
                 >
                   Mover a carpeta
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeMenu()
-                    onDuplicate()
-                  }}
-                  className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
-                >
-                  Duplicar
-                </button>
+                {/* Un guion que nunca se guardó ni una vez no tiene
+                    title/content reales todavía (están vacíos — lo que se
+                    ve en la tarjeta es el borrador) — "Duplicar" copiaría
+                    eso, un guion en blanco silencioso. Se ofrece solo para
+                    guiones ya guardados al menos una vez (con o sin una
+                    edición pendiente encima). */}
+                {script.status !== 'draft' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeMenu()
+                      onDuplicate()
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
+                  >
+                    Duplicar
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {

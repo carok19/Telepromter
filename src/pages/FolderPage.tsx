@@ -14,9 +14,21 @@ import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ScriptCard } from '../components/library/ScriptCard'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
+import { FabMenu } from '../components/shared/FabMenu'
 import { PromptDialog } from '../components/shared/PromptDialog'
+import type { DraftRecord, ScriptRecord } from '../db/db'
 import { useDropdownMenu } from '../hooks/useDropdownMenu'
 import { useScriptsStore } from '../stores/scriptsStore'
+
+// Fusiona un borrador pendiente sobre su guion — se usa tanto para uno YA
+// guardado con una edición sin confirmar como para uno que TODAVÍA no se
+// guardó ni una vez (status:'draft'): en los dos casos, lo que hay que
+// mostrar en la tarjeta es lo último tipeado (título/contenido/fecha),
+// nunca lo último guardado (que para un guion nunca guardado ni siquiera
+// existe — title/content llegarían vacíos).
+function mergeDraft(script: ScriptRecord, draft: DraftRecord): ScriptRecord {
+  return { ...script, title: draft.title, content: draft.content, updatedAt: draft.updatedAt }
+}
 
 type DialogState =
   | { type: 'none' }
@@ -33,6 +45,7 @@ export function FolderPage() {
   const pendingDrafts = useScriptsStore((s) => s.pendingDrafts)
   const loading = useScriptsStore((s) => s.loading)
   const loadScripts = useScriptsStore((s) => s.loadScripts)
+  const createScript = useScriptsStore((s) => s.createScript)
   const removeScript = useScriptsStore((s) => s.removeScript)
   const duplicateScript = useScriptsStore((s) => s.duplicateScript)
   const moveScriptToFolder = useScriptsStore((s) => s.moveScriptToFolder)
@@ -61,13 +74,27 @@ export function FolderPage() {
   // guardado — igual criterio que ya usaba el aviso "Borradores sin
   // guardar" que reemplaza esta marca. `isDraft` es lo que dispara la
   // marca [BORRADOR] en ScriptCard.
+  //
+  // Un guion que TODAVÍA no se guardó ni una vez (status:'draft') no
+  // aparece en `scripts` (el store ya lo filtra a solo guardados) — sin
+  // agregarlo acá quedaría invisible para siempre en esta carpeta, que es
+  // justo el gap que esta marca [BORRADOR] vino a cerrar: si no, crear un
+  // guion y salir sin guardar equivale a perderlo de vista por completo.
   const displayScripts = useMemo(() => {
     const draftByScriptId = new Map(pendingDrafts.map((d) => [d.script.id!, d.draft]))
-    return folderScripts.map((script) => {
+    const saved = folderScripts.map((script) => {
       const draft = draftByScriptId.get(script.id!)
-      return draft ? { script: { ...script, title: draft.title, content: draft.content }, isDraft: true } : { script, isDraft: false }
+      return draft ? { script: mergeDraft(script, draft), isDraft: true } : { script, isDraft: false }
     })
-  }, [folderScripts, pendingDrafts])
+    const neverSaved = pendingDrafts
+      .filter(
+        (d) =>
+          d.script.status === 'draft' &&
+          (isSinCarpeta ? d.script.folderId == null : d.script.folderId === numericFolderId),
+      )
+      .map((d) => ({ script: mergeDraft(d.script, d.draft), isDraft: true }))
+    return [...saved, ...neverSaved]
+  }, [folderScripts, pendingDrafts, isSinCarpeta, numericFolderId])
 
   const term = search.trim().toLowerCase()
   const visibleScripts = useMemo(() => {
@@ -76,6 +103,17 @@ export function FolderPage() {
       : displayScripts
     return [...filtered].sort((a, b) => b.script.updatedAt - a.script.updatedAt)
   }, [displayScripts, term])
+
+  // FAB de esta pantalla: "Nuevo guion" nace YA asignado a la carpeta que
+  // se está viendo (createScript ya soportaba un folderId opcional desde
+  // que existían las carpetas) — folderId `undefined` para "Sin carpeta",
+  // que es justo lo que significa ausencia de la clave en ScriptRecord.
+  // Con la carpeta decidida por contexto, guardarlo no debería tener que
+  // volver a preguntar nada (eso lo resuelve la Parte 3).
+  async function handleCreateScript() {
+    const id = await createScript(undefined, numericFolderId ?? undefined)
+    navigate(`/editor/${id}`)
+  }
 
   function closeDialog() {
     setDialog({ type: 'none' })
@@ -143,7 +181,14 @@ export function FolderPage() {
                     type="button"
                     onClick={() => {
                       setMenuOpen(false)
-                      setDialog({ type: 'deleteFolderChoice', count: folderScripts.length })
+                      // displayScripts (no folderScripts ni visibleScripts):
+                      // incluye los guiones nunca guardados de esta carpeta
+                      // (deleteFolder los borra igual — son filas reales en
+                      // `scripts`, aunque status:'draft') sin restar los que
+                      // un término de búsqueda activo esté ocultando ahora
+                      // mismo. El conteo mostrado tiene que ser cuánto se va
+                      // a borrar de VERDAD, no cuánto se ve en pantalla.
+                      setDialog({ type: 'deleteFolderChoice', count: displayScripts.length })
                     }}
                     className="block w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5"
                   >
@@ -189,6 +234,8 @@ export function FolderPage() {
           />
         ))}
       </div>
+
+      <FabMenu onNewScript={handleCreateScript} />
 
       {dialog.type === 'renameFolder' && folder && (
         <PromptDialog

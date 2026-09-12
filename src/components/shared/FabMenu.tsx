@@ -10,12 +10,21 @@ import { FilePlusIcon, FolderPlusIcon, PlusIcon } from './Icons'
 
 interface FabMenuProps {
   onNewScript: () => void
-  onNewFolder: () => void
+  // Sin onNewFolder (Nivel 2, dentro de una carpeta): el FAB es un solo
+  // botón que crea el guion directo, sin desplegar nada — no hay "Nueva
+  // carpeta" acá porque las carpetas no anidan (crear una desde dentro de
+  // otra no tendría ningún efecto de agrupación) y ese caso ya tiene su
+  // lugar natural en el Nivel 1, donde se ve toda la cuadrícula.
+  onNewFolder?: () => void
 }
 
 export function FabMenu({ onNewScript, onNewFolder }: FabMenuProps) {
   const [open, setOpen] = useState(false)
 
+  // El efecto va SIEMPRE antes que cualquier return condicional (reglas de
+  // hooks) — cuando no hay onNewFolder, `open` nunca pasa a true (el botón
+  // de abajo no despliega nada), así que este efecto simplemente no hace
+  // nada en ese caso, sin necesidad de saltearlo.
   useEffect(() => {
     if (!open) return
     function handlePointerDown(e: PointerEvent) {
@@ -31,6 +40,20 @@ export function FabMenu({ onNewScript, onNewFolder }: FabMenuProps) {
       document.removeEventListener('keydown', handleKeyDown)
     }
   }, [open])
+
+  if (!onNewFolder) {
+    return createPortal(
+      <button
+        type="button"
+        onClick={onNewScript}
+        aria-label="Nuevo guion"
+        className="fixed right-6 bottom-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg transition-transform hover:bg-blue-500 active:scale-95"
+      >
+        <PlusIcon className="h-6 w-6" />
+      </button>,
+      document.body,
+    )
+  }
 
   return createPortal(
     <div data-fab-menu className="fixed right-6 bottom-6 z-40 flex flex-col items-end gap-2">
