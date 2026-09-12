@@ -9,17 +9,22 @@
 // Supabase sin que ninguna de esas páginas necesitara cambiar su lógica
 // (salvo los textos de error, ver RemoteControlPage.tsx).
 import { create } from 'zustand'
+import type { MirrorMode, TextAlign } from '../engine/calibrationEngine'
 import {
   createSession as createSessionRemote,
   endSession as endSessionRemote,
   getRemoteClientId,
   joinSessionAsRemote,
+  publishCalibration as publishCalibrationRemote,
   publishPlayback as publishPlaybackRemote,
   requestRemoteUidRefresh,
+  sendCalibrationCommand as sendCalibrationCommandRemote,
   sendCommand as sendCommandRemote,
   subscribeToConnectivity,
   subscribeToSession,
+  type CalibrationParam,
   type JoinSessionResult,
+  type RemoteCalibration,
   type RemoteCommandType,
   type RemotePlayback,
   type RemoteSession,
@@ -38,6 +43,15 @@ interface RemoteState {
   joinSession: (sessionId: string) => Promise<JoinSessionResult>
   sendCommand: (sessionId: string, type: RemoteCommandType, value?: number) => Promise<void>
   publishPlayback: (sessionId: string, playback: RemotePlayback) => Promise<void>
+  // F8.4 parte B: comando dedicado (forma distinta a sendCommand — lleva
+  // `param`) para pedir un cambio de calibración en vivo, y la publicación
+  // del snapshot real que hace el host tras aplicarlo.
+  sendCalibrationCommand: (
+    sessionId: string,
+    param: CalibrationParam,
+    value: number | MirrorMode | TextAlign,
+  ) => Promise<void>
+  publishCalibration: (sessionId: string, calibration: RemoteCalibration) => Promise<void>
   subscribeConnectivity: (sessionId: string, callback: (connected: boolean) => void) => () => void
   // Pide reconfirmar remoteUid contra la tabla (get_remote_session). La
   // usa el host cuando llega un comando con un senderId que no reconoce,
@@ -62,6 +76,10 @@ export const useRemoteStore = create<RemoteState>(() => ({
   sendCommand: (sessionId, type, value) => sendCommandRemote(sessionId, type, value),
 
   publishPlayback: (sessionId, playback) => publishPlaybackRemote(sessionId, playback),
+
+  sendCalibrationCommand: (sessionId, param, value) => sendCalibrationCommandRemote(sessionId, param, value),
+
+  publishCalibration: (sessionId, calibration) => publishCalibrationRemote(sessionId, calibration),
 
   subscribeConnectivity: (sessionId, callback) => subscribeToConnectivity(sessionId, callback),
 

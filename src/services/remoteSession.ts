@@ -30,6 +30,7 @@
 // autenticar al remoto ante esa RLS (por ejemplo, Auth anónima) — se deja
 // documentado como trabajo pendiente, no se implementa ahora.
 import type { RealtimeChannel } from '@supabase/supabase-js'
+import { CALIBRATION_RANGES, type MirrorMode, type TextAlign } from '../engine/calibrationEngine'
 import type { TeleprompterStatus } from '../engine/teleprompterEngine'
 import { getSupabaseClient } from './supabase'
 
@@ -47,7 +48,7 @@ export const MAX_REMOTE_WPM = 300
 // si es un número, lo clampea al rango válido en vez de descartarlo —
 // alguien manteniendo presionado + más allá del límite no debe "perder" el
 // comando, solo quedarse en el tope.
-export function clampRemoteWpm(value: number | undefined): number | null {
+export function clampRemoteWpm(value: number | string | undefined): number | null {
   if (typeof value !== 'number' || !Number.isFinite(value)) return null
   return Math.min(MAX_REMOTE_WPM, Math.max(MIN_REMOTE_WPM, value))
 }
@@ -56,8 +57,18 @@ export function clampRemoteWpm(value: number | undefined): number | null {
 // cantidad fija de segundos de lectura, interpretada por el HOST con su
 // propia velocidad — nunca en píxeles) y 'setSpeed' (cambiar la velocidad
 // a un wpm objetivo, que el host vuelve a clampear/validar antes de
-// aplicar; ver el `value` de RemoteCommand).
-export type RemoteCommandType = 'play' | 'pause' | 'toggle' | 'reset' | 'seekForward' | 'seekBack' | 'setSpeed'
+// aplicar; ver el `value` de RemoteCommand). F8.4 parte B agrega
+// 'setCalibration' (tamaño de letra/margen/interlineado/alineación/espejo
+// en vivo — ver `param`/`value` y validateCalibrationCommand()).
+export type RemoteCommandType =
+  | 'play'
+  | 'pause'
+  | 'toggle'
+  | 'reset'
+  | 'seekForward'
+  | 'seekBack'
+  | 'setSpeed'
+  | 'setCalibration'
 
 export interface RemoteCommand {
   type: RemoteCommandType
@@ -71,10 +82,65 @@ export interface RemoteCommand {
   // no coincida — así un tercero que de algún modo llegue a este canal no
   // puede inyectar comandos.
   senderId: string
-  // Solo lo usa 'setSpeed' (el wpm objetivo). El host NUNCA confía en este
-  // valor tal cual: lo descarta si no es un número finito, y lo vuelve a
-  // clampear a su propio rango permitido antes de aplicarlo.
-  value?: number
+  // 'setSpeed' (wpm objetivo, número) y 'setCalibration' (según `param`,
+  // número o el valor exacto de un enum como texto) lo usan. El host NUNCA
+  // confía en este valor tal cual: lo descarta si no pasa la validación
+  // correspondiente (clampRemoteWpm / validateCalibrationCommand) antes de
+  // aplicarlo.
+  value?: number | string
+  // Solo lo usa 'setCalibration' — cuál de los ajustes en vivo cambiar.
+  // Ver CALIBRATION_PARAMS/validateCalibrationCommand: cualquier otro
+  // string se descarta, nunca se aplica "lo que se pueda".
+  param?: CalibrationParam
+}
+
+// ---------------------------------------------------------------------
+// F8.4 parte B: ajustes de calibración en vivo desde el remoto.
+// ---------------------------------------------------------------------
+const CALIBRATION_PARAMS = ['fontSize', 'maxWidth', 'lineHeight', 'mirror', 'textAlign'] as const
+export type CalibrationParam = (typeof CALIBRATION_PARAMS)[number]
+
+const MIRROR_VALUES: readonly MirrorMode[] = ['none', 'horizontal', 'vertical']
+const TEXT_ALIGN_VALUES: readonly TextAlign[] = ['script', 'left', 'center', 'right']
+
+// Snapshot de solo lectura publicado por el host para que el remoto vea el
+// valor REAL vigente (no lo que el usuario del remoto cree haber tocado) —
+// mismo espíritu que RemotePlayback, pero para calibración.
+export interface RemoteCalibration {
+  fontSize: number
+  maxWidth: number
+  lineHeight: number
+  textAlign: TextAlign
+  mirror: MirrorMode
+  updatedAt: number
+}
+
+// Lista blanca de `param` + validación por tipo — cualquier otra cosa
+// (param desconocido, número no finito donde se espera número, string
+// fuera del enum exacto) hace que el comando se descarte COMPLETO, nunca
+// se aplica una versión parcial o "corregida" de un valor inválido salvo
+// el clamp de rango para los numéricos (mantenerse en el límite en vez de
+// perder el comando si alguien mantiene presionado más allá del tope, tal
+// como ya hace clampRemoteWpm).
+export function validateCalibrationCommand(
+  param: string | undefined,
+  value: number | string | undefined,
+): { param: CalibrationParam; value: number | MirrorMode | TextAlign } | null {
+  if (!CALIBRATION_PARAMS.includes(param as CalibrationParam)) return null
+  const validParam = param as CalibrationParam
+
+  if (validParam === 'mirror') {
+    return MIRROR_VALUES.includes(value as MirrorMode) ? { param: validParam, value: value as MirrorMode } : null
+  }
+  if (validParam === 'textAlign') {
+    return TEXT_ALIGN_VALUES.includes(value as TextAlign)
+      ? { param: validParam, value: value as TextAlign }
+      : null
+  }
+  // Numérico: fontSize | maxWidth | lineHeight.
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const range = CALIBRATION_RANGES[validParam]
+  return { param: validParam, value: Math.min(range.max, Math.max(range.min, value)) }
 }
 
 // Snapshot de solo lectura para el remoto: nunca incluye posición en
@@ -106,6 +172,7 @@ export interface RemoteSession {
   scriptTitle: string
   command?: RemoteCommand | null
   playback?: RemotePlayback | null
+  calibration?: RemoteCalibration | null
 }
 
 // ---------------------------------------------------------------------
@@ -169,6 +236,7 @@ interface ChannelEntry {
   statusListeners: Set<(status: string) => void>
   commandListeners: Set<(command: RemoteCommand) => void>
   playbackListeners: Set<(playback: RemotePlayback) => void>
+  calibrationListeners: Set<(calibration: RemoteCalibration) => void>
   endedListeners: Set<() => void>
   // Emite cada vez que cambia remoteUid (confirmado por la tabla) o
   // remoteConnected (Presence coincidiendo con ese remoteUid).
@@ -249,6 +317,7 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
   const statusListeners = new Set<(status: string) => void>()
   const commandListeners = new Set<(command: RemoteCommand) => void>()
   const playbackListeners = new Set<(playback: RemotePlayback) => void>()
+  const calibrationListeners = new Set<(calibration: RemoteCalibration) => void>()
   const endedListeners = new Set<() => void>()
   const remoteStateListeners = new Set<(state: RemoteAuthState) => void>()
 
@@ -265,6 +334,7 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
     statusListeners,
     commandListeners,
     playbackListeners,
+    calibrationListeners,
     endedListeners,
     remoteStateListeners,
     confirmedRemoteUid: null,
@@ -279,6 +349,9 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
     })
     .on<RemotePlayback>('broadcast', { event: 'playback' }, ({ payload }) => {
       playbackListeners.forEach((fn) => fn(payload))
+    })
+    .on<RemoteCalibration>('broadcast', { event: 'calibration' }, ({ payload }) => {
+      calibrationListeners.forEach((fn) => fn(payload))
     })
     .on('broadcast', { event: 'ended' }, () => {
       endedListeners.forEach((fn) => fn())
@@ -346,6 +419,7 @@ function rowToSession(row: SessionRow, remoteUidOverride?: string | null): Remot
     scriptTitle: row.script_title,
     command: null,
     playback: null,
+    calibration: null,
   }
 }
 
@@ -435,6 +509,11 @@ export function subscribeToSession(
     current = { ...current, playback }
     emit()
   }
+  const onCalibration = (calibration: RemoteCalibration) => {
+    if (!current) return
+    current = { ...current, calibration }
+    emit()
+  }
   const onEnded = () => {
     if (!current) return
     current = { ...current, status: 'ended' }
@@ -455,6 +534,7 @@ export function subscribeToSession(
 
   entry.commandListeners.add(onCommand)
   entry.playbackListeners.add(onPlayback)
+  entry.calibrationListeners.add(onCalibration)
   entry.endedListeners.add(onEnded)
   entry.remoteStateListeners.add(onRemoteState)
 
@@ -474,6 +554,7 @@ export function subscribeToSession(
     closed = true
     entry.commandListeners.delete(onCommand)
     entry.playbackListeners.delete(onPlayback)
+    entry.calibrationListeners.delete(onCalibration)
     entry.endedListeners.delete(onEnded)
     entry.remoteStateListeners.delete(onRemoteState)
     releaseChannel(client, sessionId)
@@ -544,6 +625,42 @@ export async function publishPlayback(sessionId: string, playback: RemotePlaybac
   const entry = ensureChannel(client, sessionId)
   await waitForSubscribed(entry)
   await entry.channel.send({ type: 'broadcast', event: 'playback', payload: playback })
+}
+
+// F8.4 parte B — REMOTE → HOST: pide cambiar un ajuste de calibración en
+// vivo. Construye el RemoteCommand directamente (en vez de reutilizar
+// sendCommand) porque su forma es distinta (param + value, no solo type +
+// value) — el host lo valida entero con validateCalibrationCommand antes
+// de aplicar nada.
+export async function sendCalibrationCommand(
+  sessionId: string,
+  param: CalibrationParam,
+  value: number | MirrorMode | TextAlign,
+): Promise<void> {
+  const client = getSupabaseClient()
+  if (!client) return
+  const entry = ensureChannel(client, sessionId)
+  await waitForSubscribed(entry)
+  const command: RemoteCommand = {
+    type: 'setCalibration',
+    commandId: generateRandomId(),
+    issuedAt: Date.now(),
+    senderId: getRemoteClientId(),
+    param,
+    value,
+  }
+  await entry.channel.send({ type: 'broadcast', event: 'command', payload: command })
+}
+
+// F8.4 parte B — HOST → REMOTE: publica el snapshot de calibración vigente
+// (nunca lo que el remoto pidió, sino lo que el host efectivamente
+// aplicó) para que el panel del remoto refleje el valor real.
+export async function publishCalibration(sessionId: string, calibration: RemoteCalibration): Promise<void> {
+  const client = getSupabaseClient()
+  if (!client) return
+  const entry = ensureChannel(client, sessionId)
+  await waitForSubscribed(entry)
+  await entry.channel.send({ type: 'broadcast', event: 'calibration', payload: calibration })
 }
 
 // `SUBSCRIBED` en el estado del canal es el equivalente, por sesión, a lo

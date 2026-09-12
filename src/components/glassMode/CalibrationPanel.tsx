@@ -5,45 +5,21 @@ import {
   type CalibrationSettings,
   type FontWeight,
   type GhostCompensation,
+  type TextAlign,
 } from '../../engine/calibrationEngine'
+import { Slider } from '../shared/Slider'
 
 interface CalibrationPanelProps {
   settings: CalibrationSettings
   onChange: (patch: Partial<CalibrationSettings>) => void
 }
 
-interface SliderProps {
-  label: string
-  value: number
-  min: number
-  max: number
-  step: number
-  unit: string
-  onChange: (value: number) => void
-}
-
-function Slider({ label, value, min, max, step, unit, onChange }: SliderProps) {
-  return (
-    <label className="flex flex-col gap-1 text-xs text-gray-400">
-      <span className="flex items-center justify-between">
-        <span>{label}</span>
-        <span className="font-mono text-gray-200">
-          {value}
-          {unit}
-        </span>
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="accent-blue-500"
-      />
-    </label>
-  )
-}
+const TEXT_ALIGN_OPTIONS: Array<[TextAlign, string]> = [
+  ['script', 'Del guion'],
+  ['left', 'Izquierda'],
+  ['center', 'Centro'],
+  ['right', 'Derecha'],
+]
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -115,6 +91,23 @@ export function CalibrationPanel({ settings, onChange }: CalibrationPanelProps) 
           {...CALIBRATION_RANGES.maxWidth}
           onChange={(maxWidth) => onChange({ maxWidth })}
         />
+        <label className="flex flex-col gap-1 text-xs text-gray-400">
+          <span>Alineación</span>
+          <div className="flex gap-1 rounded-md border border-white/10 bg-[#0f1117] p-1">
+            {TEXT_ALIGN_OPTIONS.map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => onChange({ textAlign: value })}
+                className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+                  settings.textAlign === value ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </label>
       </Section>
 
       <Section title="Imagen">

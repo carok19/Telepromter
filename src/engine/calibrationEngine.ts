@@ -9,6 +9,14 @@ import type { CSSProperties } from 'react'
 
 export type MirrorMode = 'none' | 'horizontal' | 'vertical'
 export type FontWeight = 'light' | 'regular' | 'medium' | 'semibold' | 'bold'
+// F8.4 parte B: 'script' (default) respeta la alineación que el editor ya
+// grabó por párrafo (document.execCommand('justify...') deja
+// `style="text-align: ..."` inline en cada bloque) — no se toca nada. Las
+// otras tres FUERZAN esa alineación en todo el contenido, ver
+// getTextAlignOverrideCss() más abajo: un `text-align` puesto acá en el
+// wrapper NO alcanza, porque el estilo inline de cada bloque individual
+// tiene más especificidad que cualquier regla heredada.
+export type TextAlign = 'script' | 'left' | 'center' | 'right'
 
 export interface GhostCompensation {
   enabled: boolean
@@ -45,6 +53,12 @@ export interface CalibrationSettings {
   // Ancho máximo del bloque de texto como PORCENTAJE del contenedor (no px),
   // para que se comporte igual en pantallas de distinto tamaño.
   maxWidth: number
+  // Ver TextAlign arriba. Un perfil guardado ANTES de que este campo
+  // existiera simplemente no lo trae — se trata igual que 'script' en
+  // todos lados (DEFAULT_CALIBRATION.textAlign más abajo, y el spread
+  // `{...DEFAULT_CALIBRATION, ...perfilViejo}` en TeleprompterPage), así
+  // que un perfil viejo se sigue viendo exactamente igual que antes.
+  textAlign: TextAlign
   // Brillo/contraste como porcentaje CSS (100 = sin cambio), igual que
   // `filter: brightness()/contrast()`.
   brightness: number
@@ -72,6 +86,7 @@ export const DEFAULT_CALIBRATION: CalibrationSettings = {
   lineHeight: 1.4,
   letterSpacing: 0,
   maxWidth: 90,
+  textAlign: 'script',
   brightness: 100,
   contrast: 100,
   textColor: '#f3f4f6',
@@ -139,6 +154,12 @@ export function buildCalibrationStyle(settings: CalibrationSettings): CSSPropert
     fontWeight: fontWeightToCss(settings.fontWeight),
     lineHeight: settings.lineHeight,
     letterSpacing: `${settings.letterSpacing}px`,
+    // Sin efecto real por sí solo si el contenido tiene bloques con su
+    // propio `text-align` inline (ver TEXT_ALIGN_OVERRIDE_CLASS/
+    // getTextAlignOverrideCss) — se deja igual acá para que el wrapper sea
+    // consistente consigo mismo incluso si algún día lo usa un contenido
+    // sin esos estilos inline.
+    textAlign: settings.textAlign === 'script' ? undefined : settings.textAlign,
     color: text,
     // translate() primero (a la izquierda en la lista) para que se aplique
     // último visualmente: el desplazamiento queda en coordenadas de
@@ -183,4 +204,22 @@ export function buildGhostLayerStyle(settings: CalibrationSettings): CSSProperti
     opacity: ghost.opacity2 / 100,
     filter: `blur(${ghost.blur2}px) brightness(${ghost.intensity2}%)`,
   }
+}
+
+// F8.4 parte B — forzar alineación: el editor graba `text-align` como
+// estilo INLINE en cada bloque (`document.execCommand('justifyLeft'/
+// 'justifyCenter'/'justifyRight')`), que gana por especificidad sobre
+// cualquier `text-align` puesto en un contenedor padre (heredado, no
+// forzado). La única forma de forzarlo sin reescribir el HTML del guion es
+// una regla de hoja de estilos con `!important`, que sí le gana a un
+// estilo inline sin `!important`. TeleprompterPage agrega esta clase al
+// wrapper del contenido solo cuando `textAlign !== 'script'`, y renderiza
+// esta CSS en un <style> — 'script' (el default) no agrega la clase ni la
+// hoja de estilos, así que el comportamiento de siempre (cada bloque
+// conserva la alineación que el editor le puso) no cambia en absoluto.
+export const TEXT_ALIGN_OVERRIDE_CLASS = 'tp-force-text-align'
+
+export function getTextAlignOverrideCss(textAlign: TextAlign): string | null {
+  if (textAlign === 'script') return null
+  return `.${TEXT_ALIGN_OVERRIDE_CLASS}, .${TEXT_ALIGN_OVERRIDE_CLASS} * { text-align: ${textAlign} !important; }`
 }

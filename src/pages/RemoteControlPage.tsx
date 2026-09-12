@@ -6,8 +6,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Logo } from '../components/shared/Logo'
+import { CALIBRATION_RANGES, DEFAULT_CALIBRATION, type MirrorMode, type TextAlign } from '../engine/calibrationEngine'
 import { DEFAULT_WPM } from '../engine/duration'
-import { MAX_REMOTE_WPM, MIN_REMOTE_WPM, type RemoteSession } from '../services/remoteSession'
+import {
+  MAX_REMOTE_WPM,
+  MIN_REMOTE_WPM,
+  type CalibrationParam,
+  type RemoteSession,
+} from '../services/remoteSession'
 import { useRemoteStore } from '../stores/remoteStore'
 
 type ConnectionState = 'connecting' | 'connected' | 'not-found' | 'expired' | 'occupied' | 'ended' | 'error'
@@ -101,6 +107,117 @@ function useHoldRepeat(onFire: () => void) {
   }
 }
 
+const MIRROR_OPTIONS: Array<[MirrorMode, string]> = [
+  ['none', 'Normal'],
+  ['horizontal', '↔'],
+  ['vertical', '↕'],
+]
+
+const TEXT_ALIGN_OPTIONS: Array<[TextAlign, string]> = [
+  ['script', 'Guion'],
+  ['left', 'Izq.'],
+  ['center', 'Centro'],
+  ['right', 'Der.'],
+]
+
+// F8.4 parte B: mismo patrón "optimista" que la velocidad (Parte A) para
+// tamaño de letra / margen / interlineado — un valor local que va
+// acumulando el paso mientras se mantiene presionado (sin esperar la
+// confirmación del host en cada toque) y que revierte al valor publicado
+// por el host ~1s después de soltar. `precision` evita que acumular pasos
+// de 0.1 en interlineado arrastre errores de punto flotante.
+function useOptimisticCalibrationStepper(
+  param: CalibrationParam,
+  step: number,
+  precision: number,
+  range: { min: number; max: number },
+  hostValue: number,
+  send: (param: CalibrationParam, value: number) => void,
+) {
+  const pendingRef = useRef<number | null>(null)
+  const [display, setDisplay] = useState<number | null>(null)
+  const revertTimeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (revertTimeoutRef.current != null) window.clearTimeout(revertTimeoutRef.current)
+    }
+  }, [])
+
+  function scheduleRevert() {
+    if (revertTimeoutRef.current != null) window.clearTimeout(revertTimeoutRef.current)
+    revertTimeoutRef.current = window.setTimeout(() => {
+      pendingRef.current = null
+      setDisplay(null)
+      revertTimeoutRef.current = null
+    }, WPM_DISPLAY_REVERT_DELAY_MS)
+  }
+
+  function fireDelta(delta: number) {
+    if (revertTimeoutRef.current != null) {
+      window.clearTimeout(revertTimeoutRef.current)
+      revertTimeoutRef.current = null
+    }
+    const base = pendingRef.current ?? hostValue
+    const factor = 10 ** precision
+    const next = Math.round(Math.min(range.max, Math.max(range.min, base + delta)) * factor) / factor
+    pendingRef.current = next
+    setDisplay(next)
+    send(param, next)
+  }
+
+  const incHold = useHoldRepeat(() => fireDelta(step))
+  const decHold = useHoldRepeat(() => fireDelta(-step))
+
+  function release(hold: { onPointerUp: () => void }) {
+    hold.onPointerUp()
+    scheduleRevert()
+  }
+
+  return { shown: display ?? hostValue, incHold, decHold, release }
+}
+
+interface CalibrationStepperRowProps {
+  label: string
+  unit: string
+  disabled: boolean
+  stepper: ReturnType<typeof useOptimisticCalibrationStepper>
+}
+
+function CalibrationStepperRow({ label, unit, disabled, stepper }: CalibrationStepperRowProps) {
+  return (
+    <div className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 px-3 py-2">
+      <span className="w-20 text-left text-xs text-gray-400">{label}</span>
+      <button
+        type="button"
+        disabled={disabled}
+        className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-lg text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+        onPointerDown={stepper.decHold.onPointerDown}
+        onPointerUp={() => stepper.release(stepper.decHold)}
+        onPointerCancel={() => stepper.release(stepper.decHold)}
+        onPointerLeave={() => stepper.release(stepper.decHold)}
+      >
+        −
+      </button>
+      <span className="flex-1 text-center text-sm font-semibold text-gray-100">
+        {stepper.shown}
+        {unit}
+      </span>
+      <button
+        type="button"
+        disabled={disabled}
+        className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-lg text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+        onPointerDown={stepper.incHold.onPointerDown}
+        onPointerUp={() => stepper.release(stepper.incHold)}
+        onPointerCancel={() => stepper.release(stepper.incHold)}
+        onPointerLeave={() => stepper.release(stepper.incHold)}
+      >
+        +
+      </button>
+    </div>
+  )
+}
+
 export function RemoteControlPage() {
   const { sessionId } = useParams()
   const configured = useRemoteStore((s) => s.configured)
@@ -109,6 +226,7 @@ export function RemoteControlPage() {
   const subscribeSession = useRemoteStore((s) => s.subscribeSession)
   const subscribeConnectivity = useRemoteStore((s) => s.subscribeConnectivity)
   const sendCommand = useRemoteStore((s) => s.sendCommand)
+  const sendCalibrationCommandAction = useRemoteStore((s) => s.sendCalibrationCommand)
 
   const [state, setState] = useState<ConnectionState>(() => (configured ? 'connecting' : 'error'))
   const [session, setSession] = useState<RemoteSession | null>(null)
@@ -261,6 +379,42 @@ export function RemoteControlPage() {
     scheduleWpmRevert()
   }
 
+  // F8.4 parte B: `session.calibration` es lo que el HOST publicó como
+  // efectivamente aplicado (nunca lo que este remoto pidió) — antes de
+  // recibir el primer snapshot (recién conectado) se muestran los mismos
+  // valores por defecto que tendría "Predeterminado" en el teleprompter.
+  const calibration = session?.calibration ?? null
+
+  function sendCalibration(param: CalibrationParam, value: number | MirrorMode | TextAlign) {
+    if (!sessionId) return
+    void sendCalibrationCommandAction(sessionId, param, value)
+  }
+
+  const fontSizeStepper = useOptimisticCalibrationStepper(
+    'fontSize',
+    4,
+    0,
+    { min: CALIBRATION_RANGES.fontSize.min, max: CALIBRATION_RANGES.fontSize.max },
+    calibration?.fontSize ?? DEFAULT_CALIBRATION.fontSize,
+    sendCalibration,
+  )
+  const marginStepper = useOptimisticCalibrationStepper(
+    'maxWidth',
+    CALIBRATION_RANGES.maxWidth.step,
+    0,
+    { min: CALIBRATION_RANGES.maxWidth.min, max: CALIBRATION_RANGES.maxWidth.max },
+    calibration?.maxWidth ?? DEFAULT_CALIBRATION.maxWidth,
+    sendCalibration,
+  )
+  const lineHeightStepper = useOptimisticCalibrationStepper(
+    'lineHeight',
+    CALIBRATION_RANGES.lineHeight.step,
+    1,
+    { min: CALIBRATION_RANGES.lineHeight.min, max: CALIBRATION_RANGES.lineHeight.max },
+    calibration?.lineHeight ?? DEFAULT_CALIBRATION.lineHeight,
+    sendCalibration,
+  )
+
   const playback = session?.playback ?? null
   const engineStatus = playback?.engineStatus ?? 'ready'
   const isPlaying = engineStatus === 'playing'
@@ -389,6 +543,56 @@ export function RemoteControlPage() {
             >
               +
             </button>
+          </div>
+
+          {/* F8.4 parte B: ajustes de calibración en vivo. Los tres steppers
+              usan el mismo patrón "optimista + revertir al soltar" que la
+              velocidad; alineación y espejo son botones de un solo toque
+              (el host los confirma casi de inmediato, sin throttle). */}
+          <div className="flex w-full flex-col gap-2">
+            <CalibrationStepperRow label="Letra" unit="px" disabled={controlsDisabled} stepper={fontSizeStepper} />
+            <CalibrationStepperRow label="Margen" unit="%" disabled={controlsDisabled} stepper={marginStepper} />
+            <CalibrationStepperRow label="Interlineado" unit="×" disabled={controlsDisabled} stepper={lineHeightStepper} />
+          </div>
+
+          <div className="flex w-full flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="w-20 text-left text-xs text-gray-400">Alineación</span>
+              <div className="flex flex-1 gap-1 rounded-md border border-white/10 bg-[#0f1117] p-1">
+                {TEXT_ALIGN_OPTIONS.map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={controlsDisabled}
+                    onClick={() => sendCalibration('textAlign', value)}
+                    className={`flex-1 rounded px-1 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                      calibration?.textAlign === value ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <span className="w-20 text-left text-xs text-gray-400">Espejo</span>
+              <div className="flex flex-1 gap-1 rounded-md border border-white/10 bg-[#0f1117] p-1">
+                {MIRROR_OPTIONS.map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={controlsDisabled}
+                    onClick={() => sendCalibration('mirror', value)}
+                    className={`flex-1 rounded px-1 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                      calibration?.mirror === value ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <button

@@ -1,10 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   buildCalibrationStyle,
   buildGhostLayerStyle,
+  DEFAULT_CALIBRATION,
   getEffectiveColors,
+  getTextAlignOverrideCss,
+  TEXT_ALIGN_OVERRIDE_CLASS,
+  type CalibrationSettings,
 } from '../engine/calibrationEngine'
+import { LiveSettingsPanel } from '../components/teleprompter/LiveSettingsPanel'
 import { PairingModal } from '../components/remote/PairingModal'
 import { db, type ScriptRecord } from '../db/db'
 import { countWords, DEFAULT_WPM, estimateDurationSeconds } from '../engine/duration'
@@ -12,7 +17,13 @@ import { TeleprompterEngine } from '../engine/teleprompterEngine'
 import { useFullscreen } from '../hooks/useFullscreen'
 import { useIdleControls } from '../hooks/useIdleControls'
 import { useWakeLock } from '../hooks/useWakeLock'
-import { clampRemoteWpm, MAX_REMOTE_WPM, MIN_REMOTE_WPM, type RemoteSession } from '../services/remoteSession'
+import {
+  clampRemoteWpm,
+  MAX_REMOTE_WPM,
+  MIN_REMOTE_WPM,
+  validateCalibrationCommand,
+  type RemoteSession,
+} from '../services/remoteSession'
 import { usePlayerStore } from '../stores/playerStore'
 import { useProfilesStore } from '../stores/profilesStore'
 import { useRemoteStore } from '../stores/remoteStore'
@@ -107,6 +118,8 @@ function TeleprompterSession({ id }: { id: string }) {
 
   const profiles = useProfilesStore((s) => s.profiles)
   const loadProfiles = useProfilesStore((s) => s.loadProfiles)
+  const createProfile = useProfilesStore((s) => s.createProfile)
+  const updateProfile = useProfilesStore((s) => s.updateProfile)
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null)
 
   const remoteConfigured = useRemoteStore((s) => s.configured)
@@ -114,22 +127,25 @@ function TeleprompterSession({ id }: { id: string }) {
   const endRemoteSession = useRemoteStore((s) => s.endSession)
   const subscribeRemoteSession = useRemoteStore((s) => s.subscribeSession)
   const publishRemotePlayback = useRemoteStore((s) => s.publishPlayback)
+  const publishCalibration = useRemoteStore((s) => s.publishCalibration)
   const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
   const [remoteSessionId, setRemoteSessionId] = useState<string | null>(null)
   const [remoteSession, setRemoteSession] = useState<RemoteSession | null>(null)
   const [showPairingModal, setShowPairingModal] = useState(false)
   const [remoteError, setRemoteError] = useState<string | null>(null)
+  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
   const lastCommandIdRef = useRef<string | null>(null)
   const lastPublishRef = useRef<{ status: string; pausedByMarker: boolean; wpm: number; publishedAt: number } | null>(
     null,
   )
 
   // Nunca se ocultan mientras: hay un modal de emparejamiento abierto, hay
-  // un error de control remoto visible, o algún control del footer (p. ej.
-  // el <select> de perfil con su desplegable abierto) tiene el foco. El
-  // estado "pausado" NO fuerza los controles visibles a propósito — se
-  // trata como cualquier otro estado de reproducción.
-  const controlsVisible = !idle || showPairingModal || remoteError != null || footerHasFocus
+  // un error de control remoto visible, algún control del footer (p. ej.
+  // el <select> de perfil con su desplegable abierto) tiene el foco, o el
+  // panel de ajustes en vivo está abierto. El estado "pausado" NO fuerza
+  // los controles visibles a propósito — se trata como cualquier otro
+  // estado de reproducción.
+  const controlsVisible = !idle || showPairingModal || remoteError != null || footerHasFocus || settingsPanelOpen
 
   // TOQUE FANTASMA: si el mismo toque que revela los controles (touchstart)
   // también generara su click sobre un botón recién aparecido (p. ej. Play),
@@ -216,6 +232,79 @@ function TeleprompterSession({ id }: { id: string }) {
 
   const selectedProfile = profiles.find((p) => p.id === selectedProfileId) ?? null
 
+  // F8.4 parte B: ajustes de calibración en VIVO (tamaño de letra, margen,
+  // interlineado, alineación, espejo), editables desde el panel del host o
+  // por comando remoto, sin necesidad de guardar nada. `null` = exactamente
+  // "Predeterminado" tal como se comportaba esta pantalla siempre (sin
+  // ningún estilo de calibración aplicado) — un perfil elegido, o CUALQUIER
+  // ajuste en vivo, lo materializa a un objeto real. Cambiar de perfil
+  // reemplaza liveSettings por completo: los ajustes en vivo no guardados
+  // del perfil anterior se pierden, que es justamente lo que significa que
+  // sean "temporales".
+  const [liveSettings, setLiveSettings] = useState<CalibrationSettings | null>(null)
+  // Progreso a restaurar en el useLayoutEffect de más abajo, apenas el DOM
+  // reflowea con la geometría nueva. Es un ref (no un segundo useState)
+  // porque no necesita disparar ningún render por sí solo — solo lo lee ese
+  // mismo layout effect.
+  const pendingProgressRef = useRef<number | null>(null)
+
+  function applyLiveSettings(next: CalibrationSettings | null) {
+    // Se guarda ANTES de que este cambio disare el render con los estilos
+    // nuevos — en este punto el DOM todavía tiene la geometría VIEJA, así
+    // que engine.getProgress() todavía es válido.
+    pendingProgressRef.current = engine.getProgress()
+    setLiveSettings(next)
+  }
+
+  // Un perfil elegido (o "Predeterminado") reinicia liveSettings por
+  // completo. Se reacciona a selectedProfileId (no al objeto selectedProfile
+  // derivado) para no dispararse por casualidad cuando `profiles` cambia de
+  // referencia sin que el perfil ELEGIDO haya cambiado realmente (p. ej. al
+  // guardar cambios, loadProfiles() recrea todos los objetos del array).
+  useEffect(() => {
+    applyLiveSettings(selectedProfile ? { ...DEFAULT_CALIBRATION, ...selectedProfile } : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProfileId])
+
+  function handleLiveSettingsChange(patch: Partial<CalibrationSettings>) {
+    applyLiveSettings({ ...(liveSettings ?? DEFAULT_CALIBRATION), ...patch })
+  }
+
+  // "Guardar en perfil": si hay un perfil elegido, sobreescribe sus valores;
+  // si no ("Predeterminado" con ajustes en vivo), pide un nombre y crea uno
+  // nuevo — mismo patrón que ya usa Glass Test (handleSaveChanges/
+  // handleSaveAsNew), sin reimplementarlo distinto acá.
+  async function handleSaveLiveSettingsToProfile() {
+    const settingsToSave = liveSettings ?? DEFAULT_CALIBRATION
+    if (selectedProfileId != null) {
+      await updateProfile(selectedProfileId, settingsToSave)
+      return
+    }
+    const name = window.prompt('Nombre del perfil (ej. Teléfono, Tablet, Teleprompter principal):', 'Nuevo perfil')
+    if (!name) return
+    const id = await createProfile(name, settingsToSave)
+    handleSelectProfile(String(id))
+  }
+
+  // F8.4 parte B: restaurar la posición de lectura DESPUÉS de que un ajuste
+  // de calibración reflowea el contenido (cambia scrollHeight). El progreso
+  // se guardó en applyLiveSettings ANTES de este mismo cambio; acá — en un
+  // useLayoutEffect, que corre sincrónicamente después de que React ya
+  // aplicó los estilos nuevos al DOM pero ANTES de que el navegador pinte —
+  // se remide la geometría real (recalculateGeometry) y se restaura esa
+  // posición como progreso NORMALIZADO (seekToProgress, nunca píxeles: el
+  // total de píxeles cambió junto con la geometría). Un useEffect común
+  // (asíncrono, después de pintar) dejaría ver un frame en la posición
+  // vieja/incorrecta antes de corregirse — por eso useLayoutEffect y no
+  // useEffect.
+  useLayoutEffect(() => {
+    engine.recalculateGeometry()
+    if (pendingProgressRef.current != null) {
+      engine.seekToProgress(pendingProgressRef.current)
+      pendingProgressRef.current = null
+    }
+  }, [engine, liveSettings])
+
   // Suscripción en vivo a la sesión de control remoto (F8.2), si existe una
   // creada por este host. No tiene relación con la reproducción: solo se
   // usa para reflejar "esperando remoto" / "remoto conectado" en la UI.
@@ -275,7 +364,12 @@ function TeleprompterSession({ id }: { id: string }) {
   // (el wpm objetivo que ya calculó el remoto), pero clampRemoteWpm lo
   // vuelve a validar/clampear acá y descarta el comando por completo si no
   // es un número finito: nunca se confía en lo que manda el remoto sin
-  // revalidar.
+  // revalidar. 'setCalibration' (F8.4 parte B) sigue el mismo principio:
+  // validateCalibrationCommand aplica una lista blanca de `param` y valida
+  // el tipo exacto esperado para cada uno (número finito clampeado a su
+  // rango real, o un valor exacto del enum de mirror/textAlign) — cualquier
+  // otra cosa descarta el comando entero, nunca se aplica una versión
+  // parcial.
   //
   // Límite conocido (pendiente para F8.6): los canales de Realtime son
   // públicos, así que un tercero que conozca el sessionId puede observar
@@ -304,7 +398,18 @@ function TeleprompterSession({ id }: { id: string }) {
     } else if (command.type === 'setSpeed') {
       const clamped = clampRemoteWpm(command.value)
       if (clamped != null) setSpeed(clamped)
+    } else if (command.type === 'setCalibration') {
+      const validated = validateCalibrationCommand(command.param, command.value)
+      if (validated) {
+        applyLiveSettings({ ...(liveSettings ?? DEFAULT_CALIBRATION), [validated.param]: validated.value })
+      }
     }
+    // applyLiveSettings se omite a propósito: es una función local (no
+    // memoizada) cuya identidad cambia en cada render — listarla haría que
+    // este efecto se re-ejecutara en cada render en vez de solo cuando
+    // realmente cambia algo relevante. Ya lee `liveSettings` fresco porque
+    // ese sí está en las deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     remoteSession?.command,
     remoteSession?.remoteUid,
@@ -319,6 +424,7 @@ function TeleprompterSession({ id }: { id: string }) {
     wpm,
     progress,
     setSpeed,
+    liveSettings,
   ])
 
   // F8.3/F8.4 — HOST → REMOTE: publica un snapshot de reproducción
@@ -354,6 +460,26 @@ function TeleprompterSession({ id }: { id: string }) {
     })
   }, [remoteSessionId, remoteSession?.remoteUid, status, progress, wpm, pausedByMarker, publishRemotePlayback])
 
+  // F8.4 parte B — HOST → REMOTE: publica el snapshot de calibración
+  // vigente (lo que el host efectivamente tiene aplicado, nunca lo que un
+  // remoto pidió) cada vez que cambia, y también apenas remoteConnected
+  // pasa a true — así un remoto recién conectado ve el valor real de
+  // inmediato, sin esperar a que alguien toque un ajuste. Sin throttle
+  // propio a propósito: a diferencia del progreso de reproducción, esto no
+  // cambia varias veces por segundo.
+  useEffect(() => {
+    if (!remoteSessionId || !remoteSession?.remoteConnected) return
+    const settings = liveSettings ?? DEFAULT_CALIBRATION
+    publishCalibration(remoteSessionId, {
+      fontSize: settings.fontSize,
+      maxWidth: settings.maxWidth,
+      lineHeight: settings.lineHeight,
+      textAlign: settings.textAlign,
+      mirror: settings.mirror,
+      updatedAt: Date.now(),
+    })
+  }, [remoteSessionId, remoteSession?.remoteConnected, liveSettings, publishCalibration])
+
   // Conectar el motor al store en cuanto existe esta sesión.
   useEffect(() => {
     const detachStore = attachEngine(engine)
@@ -380,16 +506,6 @@ function TeleprompterSession({ id }: { id: string }) {
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
   }, [engine])
-
-  // Cambiar de perfil (o volver a "Predeterminado") puede cambiar fontSize/
-  // lineHeight/letterSpacing/maxWidth, lo que cambia cuánto mide el
-  // contenido — hay que remedir. No toca `positionPx` salvo para acotarlo
-  // si el nuevo total es más corto (mismo método ya usado para el resize),
-  // así que la posición visual no salta y el motor sigue play/pausado según
-  // ya estaba.
-  useEffect(() => {
-    engine.recalculateGeometry()
-  }, [engine, selectedProfile])
 
   if (script === undefined) {
     return <div className="p-8 text-sm text-gray-500">Cargando guion...</div>
@@ -420,16 +536,24 @@ function TeleprompterSession({ id }: { id: string }) {
           ? 'Reproduciendo'
           : 'Listo'
 
-  // Sin perfil ("Predeterminado"): no se aplica ningún estilo de
-  // calibración — el teleprompter se ve exactamente como antes de esta
-  // integración (mismas clases de siempre en el contenido). Con perfil:
-  // se reutilizan tal cual las funciones de calibrationEngine (la misma
-  // lógica ya validada en Glass Test), sin reimplementar nada del cálculo
-  // de mirror/color/filtro aquí.
-  const stageStyle = selectedProfile ? buildCalibrationStyle(selectedProfile) : undefined
-  const ghostStyle = selectedProfile ? buildGhostLayerStyle(selectedProfile) : null
-  const viewportBackground = selectedProfile ? getEffectiveColors(selectedProfile).background : undefined
+  // liveSettings null ("Predeterminado", nunca tocado): no se aplica ningún
+  // estilo de calibración — el teleprompter se ve exactamente como antes de
+  // toda esta integración (mismas clases de siempre en el contenido). Con
+  // liveSettings (perfil elegido, o cualquier ajuste en vivo aunque no haya
+  // perfil): se reutilizan tal cual las funciones de calibrationEngine (la
+  // misma lógica ya validada en Glass Test), sin reimplementar nada del
+  // cálculo de mirror/color/filtro aquí.
+  const stageStyle = liveSettings ? buildCalibrationStyle(liveSettings) : undefined
+  const ghostStyle = liveSettings ? buildGhostLayerStyle(liveSettings) : null
+  const viewportBackground = liveSettings ? getEffectiveColors(liveSettings).background : undefined
   const ghostHtml = ghostStyle ? stripPauseMarkersForGhost(script.content) : null
+  // 'script' (default): no se agrega la clase ni la hoja de estilos — el
+  // contenido conserva la alineación que el editor le puso a cada bloque,
+  // exactamente como siempre. Cualquier otro valor SÍ fuerza la alineación
+  // en todo el contenido (ver getTextAlignOverrideCss en calibrationEngine.ts
+  // — un `text-align` en el wrapper no alcanza contra el estilo inline por
+  // bloque que deja el editor).
+  const textAlignOverrideCss = liveSettings ? getTextAlignOverrideCss(liveSettings.textAlign) : null
 
   return (
     // h-dvh (no h-screen): en celular, fuera de pantalla completa, la barra
@@ -497,26 +621,30 @@ function TeleprompterSession({ id }: { id: string }) {
         className="absolute inset-0 overflow-hidden bg-[#0b0c10]"
         style={{ backgroundColor: viewportBackground }}
       >
+        {/* Ver getTextAlignOverrideCss en calibrationEngine.ts: solo existe
+            cuando textAlign !== 'script', y solo afecta a los elementos con
+            TEXT_ALIGN_OVERRIDE_CLASS (el wrapper del contenido, más abajo). */}
+        {textAlignOverrideCss && <style>{textAlignOverrideCss}</style>}
         {/* Este wrapper solo existe para aplicar mirror/offset/filtro/ancho
             del perfil (buildCalibrationStyle) sin tocar el elemento que el
-            motor transforma. Sin perfil, stageStyle es `undefined` y este
-            div queda sin ningún estilo — cero diferencia visual con el
+            motor transforma. Sin liveSettings, stageStyle es `undefined` y
+            este div queda sin ningún estilo — cero diferencia visual con el
             comportamiento de antes de esta integración. */}
         <div style={stageStyle}>
           <div
             ref={contentRef}
-            // position: relative (siempre, con o sin perfil) para que los
-            // marcadores de pausa y la capa Ghost midan su posición contra
-            // ESTE elemento — el mismo que mueve el motor — y no terminen
-            // usando por accidente al nuevo wrapper de arriba como
+            // position: relative (siempre, con o sin liveSettings) para que
+            // los marcadores de pausa y la capa Ghost midan su posición
+            // contra ESTE elemento — el mismo que mueve el motor — y no
+            // terminen usando por accidente al nuevo wrapper de arriba como
             // referencia de posicionamiento (offsetParent), lo que
             // rompería el cálculo de checkpoints del motor. No cambia nada
             // visible: no se fija ningún top/left.
-            className={
-              selectedProfile
+            className={`${
+              liveSettings
                 ? 'py-16 will-change-transform [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-4xl [&_h2]:font-semibold [&_p]:mb-4 [&_div]:mb-4'
                 : 'mx-auto max-w-3xl px-6 py-16 text-3xl leading-relaxed text-gray-100 will-change-transform [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-4xl [&_h2]:font-semibold [&_p]:mb-4 [&_div]:mb-4'
-            }
+            } ${liveSettings && liveSettings.textAlign !== 'script' ? TEXT_ALIGN_OVERRIDE_CLASS : ''}`}
             style={{ position: 'relative' }}
           >
             {/* El contenido real (el que cuenta para el alto desplazable)
@@ -541,6 +669,18 @@ function TeleprompterSession({ id }: { id: string }) {
         }`}
         style={{ pointerEvents: controlsInteractive ? 'auto' : 'none' }}
       >
+        {/* F8.4 parte B: vive DENTRO del mismo overlay que el footer (no un
+            overlay aparte) para heredar gratis su ocultado automático y su
+            protección de toque fantasma — no hace falta duplicar ninguna
+            de las dos acá. */}
+        {settingsPanelOpen && (
+          <LiveSettingsPanel
+            settings={liveSettings ?? DEFAULT_CALIBRATION}
+            onChange={handleLiveSettingsChange}
+            onSave={handleSaveLiveSettingsToProfile}
+            onClose={() => setSettingsPanelOpen(false)}
+          />
+        )}
         <footer
           onFocus={handleFooterFocus}
           onBlur={handleFooterBlur}
@@ -560,6 +700,13 @@ function TeleprompterSession({ id }: { id: string }) {
               className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
             >
               Reiniciar
+            </button>
+            <button
+              type="button"
+              onClick={() => setSettingsPanelOpen((v) => !v)}
+              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
+            >
+              Ajustes
             </button>
             <button
               type="button"
