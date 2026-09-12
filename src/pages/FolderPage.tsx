@@ -6,11 +6,9 @@
 // borrarlos junto con la carpeta, con una confirmación aparte para lo
 // destructivo).
 //
-// Parte 1 del rediseño: esta pantalla ya es funcional (búsqueda dentro de
-// la carpeta, menú ⋯ de la carpeta, eliminar guion) pero todavía reutiliza
-// ScriptCard tal cual estaba (tocar la tarjeta abre el editor, con su
-// botón "▶ Teleprompter" aparte) — el rediseño de la tarjeta en sí y el
-// cambio de "tocar abre el teleprompter" son la Parte 2.
+// Parte 2 del rediseño: ScriptCard ya usa la tarjeta nueva (ícono,
+// metadatos, vista previa de 2 líneas, marca [BORRADOR]) — tocarla abre el
+// teleprompter, editar pasó al menú ⋯.
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -32,6 +30,7 @@ export function FolderPage() {
   const navigate = useNavigate()
   const scripts = useScriptsStore((s) => s.scripts)
   const folders = useScriptsStore((s) => s.folders)
+  const pendingDrafts = useScriptsStore((s) => s.pendingDrafts)
   const loading = useScriptsStore((s) => s.loading)
   const loadScripts = useScriptsStore((s) => s.loadScripts)
   const removeScript = useScriptsStore((s) => s.removeScript)
@@ -57,11 +56,26 @@ export function FolderPage() {
     [scripts, isSinCarpeta, numericFolderId],
   )
 
+  // Si un guion (ya guardado) tiene una edición pendiente sin confirmar,
+  // la tarjeta debe mostrar SIEMPRE lo último tipeado, no lo último
+  // guardado — igual criterio que ya usaba el aviso "Borradores sin
+  // guardar" que reemplaza esta marca. `isDraft` es lo que dispara la
+  // marca [BORRADOR] en ScriptCard.
+  const displayScripts = useMemo(() => {
+    const draftByScriptId = new Map(pendingDrafts.map((d) => [d.script.id!, d.draft]))
+    return folderScripts.map((script) => {
+      const draft = draftByScriptId.get(script.id!)
+      return draft ? { script: { ...script, title: draft.title, content: draft.content }, isDraft: true } : { script, isDraft: false }
+    })
+  }, [folderScripts, pendingDrafts])
+
   const term = search.trim().toLowerCase()
   const visibleScripts = useMemo(() => {
-    const filtered = term ? folderScripts.filter((s) => s.title.toLowerCase().includes(term)) : folderScripts
-    return [...filtered].sort((a, b) => b.updatedAt - a.updatedAt)
-  }, [folderScripts, term])
+    const filtered = term
+      ? displayScripts.filter(({ script }) => script.title.toLowerCase().includes(term))
+      : displayScripts
+    return [...filtered].sort((a, b) => b.script.updatedAt - a.script.updatedAt)
+  }, [displayScripts, term])
 
   function closeDialog() {
     setDialog({ type: 'none' })
@@ -161,12 +175,13 @@ export function FolderPage() {
       )}
 
       <div className="flex flex-col gap-3">
-        {visibleScripts.map((script) => (
+        {visibleScripts.map(({ script, isDraft }) => (
           <ScriptCard
             key={script.id}
             script={script}
+            isDraft={isDraft}
             folders={folders}
-            onOpen={() => navigate(`/editor/${script.id}`)}
+            onEdit={() => navigate(`/editor/${script.id}`)}
             onOpenTeleprompter={() => navigate(`/teleprompter/${script.id}`)}
             onDuplicate={() => duplicateScript(script.id!)}
             onDelete={() => setDialog({ type: 'deleteScript', scriptId: script.id! })}
