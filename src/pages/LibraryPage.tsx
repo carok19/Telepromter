@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ConfirmDialog } from '../components/shared/ConfirmDialog'
+import { PromptDialog } from '../components/shared/PromptDialog'
 import { FolderTabs, type FolderFilter } from '../components/library/FolderTabs'
 import { ScriptCard } from '../components/library/ScriptCard'
 import type { FolderRecord } from '../db/db'
@@ -43,6 +45,19 @@ function storeFolder(filter: FolderFilter) {
   }
 }
 
+// Reemplaza window.prompt/confirm (ver ConfirmDialog/PromptDialog): un
+// único estado describe cuál diálogo está abierto, si alguno. El borrado
+// de carpetas necesita DOS pasos ('deleteFolderChoice' -> opcionalmente
+// 'deleteFolderConfirm') porque la opción destructiva debe pedir una
+// confirmación aparte, más seria que la de simplemente mover los guiones.
+type DialogState =
+  | { type: 'none' }
+  | { type: 'createFolder' }
+  | { type: 'renameFolder'; folder: FolderRecord }
+  | { type: 'deleteScript'; scriptId: number }
+  | { type: 'deleteFolderChoice'; folder: FolderRecord; count: number }
+  | { type: 'deleteFolderConfirm'; folder: FolderRecord; count: number }
+
 export function LibraryPage() {
   const navigate = useNavigate()
   const scripts = useScriptsStore((s) => s.scripts)
@@ -66,6 +81,7 @@ export function LibraryPage() {
   // búsqueda, para no dejarlo prendido por accidente la próxima vez que se
   // busca algo nuevo dentro de una carpeta.
   const [searchAllFolders, setSearchAllFolders] = useState(false)
+  const [dialog, setDialog] = useState<DialogState>({ type: 'none' })
 
   useEffect(() => {
     loadScripts()
@@ -123,37 +139,31 @@ export function LibraryPage() {
     navigate(`/editor/${id}`)
   }
 
-  async function handleDelete(id: number) {
-    if (window.confirm('¿Eliminar este guion? Esta acción no se puede deshacer.')) {
-      await removeScript(id)
-    }
+  function closeDialog() {
+    setDialog({ type: 'none' })
+  }
+
+  function handleDelete(id: number) {
+    setDialog({ type: 'deleteScript', scriptId: id })
   }
 
   function handleCreateFolder() {
-    const name = window.prompt('Nombre de la carpeta (ej. Marca A, Marca B):')
-    if (!name || !name.trim()) return
-    // Nombres duplicados: se permiten a propósito, sin avisar — igual que
-    // ya pasa con el título de los guiones (tampoco es único). Evita una
-    // validación extra que en la práctica solo estorbaría (dos cuentas de
-    // TikTok legítimamente pueden compartir nombre de fantasía).
-    createFolder(name.trim())
+    setDialog({ type: 'createFolder' })
   }
 
   function handleRenameFolder(folder: FolderRecord) {
-    const name = window.prompt('Nuevo nombre de la carpeta:', folder.name)
-    if (!name || !name.trim() || name.trim() === folder.name) return
-    renameFolder(folder.id!, name.trim())
+    setDialog({ type: 'renameFolder', folder })
   }
 
-  async function handleDeleteFolder(folder: FolderRecord) {
+  function handleDeleteFolder(folder: FolderRecord) {
     const count = countByFolder.get(folder.id!) ?? 0
-    const message =
-      count === 0
-        ? `¿Eliminar la carpeta "${folder.name}"? No tiene guiones dentro.`
-        : `¿Eliminar la carpeta "${folder.name}"? ${count} ${count === 1 ? 'guion se moverá' : 'guiones se moverán'} a "Sin carpeta" — no se borra ningún guion.`
-    if (!window.confirm(message)) return
-    await deleteFolder(folder.id!)
+    setDialog({ type: 'deleteFolderChoice', folder, count })
+  }
+
+  async function finishDeleteFolder(folder: FolderRecord, mode: 'move' | 'delete') {
+    await deleteFolder(folder.id!, mode)
     if (selectedFolder === folder.id) handleSelectFolder('all')
+    closeDialog()
   }
 
   return (
@@ -238,6 +248,113 @@ export function LibraryPage() {
           />
         ))}
       </div>
+
+      {dialog.type === 'createFolder' && (
+        <PromptDialog
+          title="Nueva carpeta"
+          label="Nombre de la carpeta"
+          placeholder="Ej. Marca A"
+          confirmLabel="Crear"
+          onConfirm={(name) => {
+            // Nombres duplicados: se permiten a propósito, sin avisar —
+            // mismo criterio que ya rige el título de los guiones (tampoco
+            // es único), y dos cuentas de TikTok pueden compartir
+            // legítimamente un nombre de fantasía.
+            createFolder(name)
+            closeDialog()
+          }}
+          onClose={closeDialog}
+        />
+      )}
+
+      {dialog.type === 'renameFolder' && (
+        <PromptDialog
+          title="Renombrar carpeta"
+          label="Nombre de la carpeta"
+          initialValue={dialog.folder.name}
+          confirmLabel="Guardar"
+          onConfirm={(name) => {
+            if (name !== dialog.folder.name) renameFolder(dialog.folder.id!, name)
+            closeDialog()
+          }}
+          onClose={closeDialog}
+        />
+      )}
+
+      {dialog.type === 'deleteScript' && (
+        <ConfirmDialog
+          title="Eliminar guion"
+          message="Esta acción no se puede deshacer."
+          actions={[
+            { label: 'Cancelar', variant: 'neutral', onClick: closeDialog },
+            {
+              label: 'Eliminar',
+              variant: 'danger',
+              onClick: async () => {
+                await removeScript(dialog.scriptId)
+                closeDialog()
+              },
+            },
+          ]}
+          onClose={closeDialog}
+        />
+      )}
+
+      {dialog.type === 'deleteFolderChoice' &&
+        (dialog.count === 0 ? (
+          <ConfirmDialog
+            title={`Eliminar "${dialog.folder.name}"`}
+            message="Esta carpeta no tiene guiones dentro."
+            actions={[
+              { label: 'Cancelar', variant: 'neutral', onClick: closeDialog },
+              {
+                label: 'Eliminar carpeta',
+                variant: 'danger',
+                onClick: () => finishDeleteFolder(dialog.folder, 'move'),
+              },
+            ]}
+            onClose={closeDialog}
+          />
+        ) : (
+          <ConfirmDialog
+            title={`Eliminar "${dialog.folder.name}"`}
+            message={`Tiene ${dialog.count} ${dialog.count === 1 ? 'guion' : 'guiones'}. Elegí qué hacer con ${
+              dialog.count === 1 ? 'él' : 'ellos'
+            }.`}
+            actions={[
+              { label: 'Cancelar', variant: 'neutral', onClick: closeDialog },
+              {
+                label: 'Mover a "Sin carpeta" y eliminar la carpeta',
+                variant: 'primary',
+                onClick: () => finishDeleteFolder(dialog.folder, 'move'),
+              },
+              {
+                label: `Eliminar la carpeta y sus ${dialog.count} guiones`,
+                variant: 'danger',
+                onClick: () => setDialog({ type: 'deleteFolderConfirm', folder: dialog.folder, count: dialog.count }),
+              },
+            ]}
+            onClose={closeDialog}
+          />
+        ))}
+
+      {dialog.type === 'deleteFolderConfirm' && (
+        <ConfirmDialog
+          title="¿Eliminar definitivamente?"
+          message={`Se borrarán la carpeta "${dialog.folder.name}" y sus ${dialog.count} ${
+            dialog.count === 1 ? 'guion' : 'guiones'
+          }. Esta acción NO se puede deshacer.`}
+          actions={[
+            { label: 'Cancelar', variant: 'neutral', onClick: closeDialog },
+            {
+              label: 'Eliminar para siempre',
+              variant: 'danger',
+              onClick: () => finishDeleteFolder(dialog.folder, 'delete'),
+            },
+          ]}
+          onClose={closeDialog}
+        />
+      )}
     </div>
   )
 }

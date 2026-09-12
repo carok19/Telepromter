@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { FolderRecord, ScriptRecord } from '../../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../../engine/duration'
+import { useDropdownMenu } from '../../hooks/useDropdownMenu'
 
 interface ScriptCardProps {
   script: ScriptRecord
@@ -28,21 +29,22 @@ export function ScriptCard({
   onDelete,
   onMoveToFolder,
 }: ScriptCardProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
   // "Mover a..." se expande DENTRO del mismo menú (una lista más, con
   // "‹ Volver" arriba) en vez de un submenú aparte — más simple de
   // implementar y de usar con pocas carpetas, que es el caso esperado acá.
   const [showMoveMenu, setShowMoveMenu] = useState(false)
+  // remeasureKey=showMoveMenu: el contenido del menú cambia de tamaño al
+  // pasar de la lista principal a "Mover a..." sin cerrarse — hay que
+  // volver a medir la posición (arriba/abajo) en ese momento, no solo al
+  // abrir.
+  const { open: menuOpen, setOpen: setMenuOpen, openUpward, anchorRef, menuRef } = useDropdownMenu<HTMLDivElement>(
+    showMoveMenu,
+  )
 
-  useEffect(() => {
-    if (!menuOpen) return
-    function closeMenu() {
-      setMenuOpen(false)
-      setShowMoveMenu(false)
-    }
-    document.addEventListener('click', closeMenu)
-    return () => document.removeEventListener('click', closeMenu)
-  }, [menuOpen])
+  function closeMenu() {
+    setMenuOpen(false)
+    setShowMoveMenu(false)
+  }
 
   const wordCount = countWords(script.content)
   const duration = formatDuration(estimateDurationSeconds(wordCount, DEFAULT_WPM))
@@ -77,7 +79,7 @@ export function ScriptCard({
           >
             ▶ Teleprompter
           </button>
-          <div className="relative">
+          <div ref={anchorRef} className="relative">
             <button
               type="button"
               onClick={(e) => {
@@ -91,8 +93,11 @@ export function ScriptCard({
             </button>
             {menuOpen && !showMoveMenu && (
               <div
+                ref={menuRef}
                 onClick={(e) => e.stopPropagation()}
-                className="absolute right-0 top-8 z-10 w-40 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
+                className={`absolute right-0 z-10 w-40 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg ${
+                  openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+                }`}
               >
                 <button
                   type="button"
@@ -104,7 +109,7 @@ export function ScriptCard({
                 <button
                   type="button"
                   onClick={() => {
-                    setMenuOpen(false)
+                    closeMenu()
                     onDuplicate()
                   }}
                   className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
@@ -114,7 +119,7 @@ export function ScriptCard({
                 <button
                   type="button"
                   onClick={() => {
-                    setMenuOpen(false)
+                    closeMenu()
                     onDelete()
                   }}
                   className="block w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5"
@@ -125,8 +130,11 @@ export function ScriptCard({
             )}
             {menuOpen && showMoveMenu && (
               <div
+                ref={menuRef}
                 onClick={(e) => e.stopPropagation()}
-                className="absolute right-0 top-8 z-10 max-h-56 w-44 overflow-y-auto rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
+                className={`absolute right-0 z-10 max-h-56 w-44 overflow-y-auto rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg ${
+                  openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+                }`}
               >
                 <button
                   type="button"
@@ -139,8 +147,7 @@ export function ScriptCard({
                   type="button"
                   disabled={script.folderId == null}
                   onClick={() => {
-                    setMenuOpen(false)
-                    setShowMoveMenu(false)
+                    closeMenu()
                     onMoveToFolder(null)
                   }}
                   className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:bg-transparent"
@@ -153,8 +160,7 @@ export function ScriptCard({
                     type="button"
                     disabled={script.folderId === folder.id}
                     onClick={() => {
-                      setMenuOpen(false)
-                      setShowMoveMenu(false)
+                      closeMenu()
                       onMoveToFolder(folder.id!)
                     }}
                     className="block w-full truncate px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:bg-transparent"

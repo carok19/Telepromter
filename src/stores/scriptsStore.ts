@@ -26,11 +26,12 @@ interface ScriptsState {
   moveScriptToFolder: (id: number, folderId: number | null) => Promise<void>
   createFolder: (name: string) => Promise<number>
   renameFolder: (id: number, name: string) => Promise<void>
-  // Mueve todos los guiones de esa carpeta a "Sin carpeta" antes de
-  // borrarla — nunca borra guiones. La UI (LibraryPage) es quien pide
-  // confirmación mostrando cuántos se van a mover; esta función no
-  // pregunta nada, solo ejecuta.
-  deleteFolder: (id: number) => Promise<void>
+  // 'move' (por defecto en la UI): mueve los guiones de esa carpeta a "Sin
+  // carpeta" antes de borrarla — nunca los toca de otro modo. 'delete':
+  // borra la carpeta Y todos sus guiones — la opción destructiva, que
+  // LibraryPage solo ofrece tras una confirmación aparte. Ninguno de los
+  // dos modos pregunta nada acá: eso es responsabilidad de la UI.
+  deleteFolder: (id: number, mode: 'move' | 'delete') => Promise<void>
 }
 
 export const useScriptsStore = create<ScriptsState>((set, get) => ({
@@ -49,7 +50,11 @@ export const useScriptsStore = create<ScriptsState>((set, get) => ({
     set({ scripts, folders, loading: false })
   },
 
-  createScript: async (title = 'Sin título', folderId) => {
+  // title='' (no 'Sin título'): el título vacío se muestra como
+  // placeholder gris en el editor y como "Sin título" en la biblioteca
+  // (ScriptCard ya hace `script.title || 'Sin título'`) — pero como TEXTO
+  // real en el campo, antes había que borrarlo para poder escribir.
+  createScript: async (title = '', folderId) => {
     const now = Date.now()
     const id = await db.scripts.add({
       title,
@@ -80,7 +85,9 @@ export const useScriptsStore = create<ScriptsState>((set, get) => ({
     if (!original) return undefined
     const now = Date.now()
     const newId = await db.scripts.add({
-      title: `${original.title} (copia)`,
+      // Un original sin título queda sin título también — "(copia)" a
+      // secas se leería como si ESE fuera el título real.
+      title: original.title ? `${original.title} (copia)` : '',
       content: original.content,
       createdAt: now,
       updatedAt: now,
@@ -117,9 +124,13 @@ export const useScriptsStore = create<ScriptsState>((set, get) => ({
     set({ folders: get().folders.map((f) => (f.id === id ? { ...f, name, updatedAt } : f)) })
   },
 
-  deleteFolder: async (id) => {
+  deleteFolder: async (id, mode) => {
     await db.transaction('rw', db.scripts, db.folders, async () => {
-      await db.scripts.where('folderId').equals(id).modify({ folderId: undefined })
+      if (mode === 'delete') {
+        await db.scripts.where('folderId').equals(id).delete()
+      } else {
+        await db.scripts.where('folderId').equals(id).modify({ folderId: undefined })
+      }
       await db.folders.delete(id)
     })
     await get().loadScripts()

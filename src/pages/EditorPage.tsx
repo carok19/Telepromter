@@ -13,6 +13,7 @@ export function EditorPage() {
   const navigate = useNavigate()
   const createScript = useScriptsStore((s) => s.createScript)
   const updateScript = useScriptsStore((s) => s.updateScript)
+  const removeScript = useScriptsStore((s) => s.removeScript)
   const saveStatus = useScriptsStore((s) => s.saveStatus)
   const setSaveStatus = useScriptsStore((s) => s.setSaveStatus)
 
@@ -26,6 +27,15 @@ export function EditorPage() {
   const pendingPatchRef = useRef<Partial<Pick<ScriptRecord, 'title' | 'content'>>>({})
   const scriptIdRef = useRef<number | null>(null)
   const hasCreatedRef = useRef(false)
+  // Guion vacío al salir (bug reportado: entrar a "Nuevo guion" y salir sin
+  // escribir nada deja basura en la biblioteca): espejan `title`/`wordCount`
+  // en refs para poder leer el valor MÁS RECIENTE en el cleanup de más
+  // abajo, cuyo closure (por sus deps [updateScript, setSaveStatus,
+  // removeScript], estables) quedaría con los valores de cuando se montó
+  // si se leyera el estado directamente. isEmpty exige AMBOS vacíos —
+  // nunca se borra un guion con título O contenido real.
+  const titleRef = useRef('')
+  const wordCountRef = useRef(0)
 
   // Si se entra a /editor sin id, crear un guion nuevo y redirigir a /editor/:id.
   useEffect(() => {
@@ -46,7 +56,10 @@ export function EditorPage() {
       if (cancelled || !record) return
       setScript(record)
       setTitle(record.title)
-      setWordCount(countWords(record.content))
+      titleRef.current = record.title
+      const words = countWords(record.content)
+      setWordCount(words)
+      wordCountRef.current = words
     })
     return () => {
       cancelled = true
@@ -84,30 +97,46 @@ export function EditorPage() {
   )
 
   // Al desmontar (p. ej. al navegar a "Volver" antes de que venza el
-  // debounce), volcar inmediatamente cualquier cambio pendiente en vez de
-  // descartarlo. setSaveStatus acá es seguro aunque el componente ya se
-  // haya desmontado: vive en scriptsStore (Zustand), no en un useState
-  // local — a diferencia de antes, esto SÍ deja a usePwaUpdate.ts (F8.6)
-  // ver que todavía hay un guardado en curso durante este volcado final.
+  // debounce): si el guion sigue completamente vacío (nunca se escribió
+  // título NI contenido), se descarta en vez de dejarlo como basura en la
+  // biblioteca — es el mismo guion que "Nuevo guion" (o entrar a /editor
+  // sin id) acaba de crear automáticamente; si nunca se tocó, no tiene
+  // sentido conservarlo. Si tiene CUALQUIER texto, nunca se borra: se
+  // vuelca de inmediato el cambio pendiente en vez de descartarlo, igual
+  // que antes. setSaveStatus acá es seguro aunque el componente ya se haya
+  // desmontado: vive en scriptsStore (Zustand), no en un useState local —
+  // esto deja a usePwaUpdate.ts (F8.6) ver que todavía hay un guardado en
+  // curso durante este volcado final.
   useEffect(() => {
     return () => {
       window.clearTimeout(saveTimeoutRef.current)
       const pending = pendingPatchRef.current
-      if (scriptIdRef.current != null && Object.keys(pending).length > 0) {
+      const id = scriptIdRef.current
+      if (id == null) return
+      const isEmpty = titleRef.current.trim() === '' && wordCountRef.current === 0
+      if (isEmpty) {
+        pendingPatchRef.current = {}
+        removeScript(id)
+        return
+      }
+      if (Object.keys(pending).length > 0) {
         pendingPatchRef.current = {}
         setSaveStatus('saving')
-        updateScript(scriptIdRef.current, pending).then(() => setSaveStatus('saved'))
+        updateScript(id, pending).then(() => setSaveStatus('saved'))
       }
     }
-  }, [updateScript, setSaveStatus])
+  }, [updateScript, setSaveStatus, removeScript])
 
   function handleTitleChange(value: string) {
     setTitle(value)
+    titleRef.current = value
     persist({ title: value })
   }
 
   function handleContentChange(html: string) {
-    setWordCount(countWords(html))
+    const words = countWords(html)
+    setWordCount(words)
+    wordCountRef.current = words
     persist({ content: html })
   }
 
@@ -126,7 +155,7 @@ export function EditorPage() {
         <input
           value={title}
           onChange={(e) => handleTitleChange(e.target.value)}
-          placeholder="Título del guion"
+          placeholder="Sin título"
           className="flex-1 bg-transparent text-lg font-medium text-gray-100 placeholder:text-gray-600 focus:outline-none"
         />
         <span className="text-xs text-gray-500">{saveStatus === 'saving' ? 'Guardando…' : 'Guardado'}</span>

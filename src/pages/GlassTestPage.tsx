@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { CalibrationPanel } from '../components/glassMode/CalibrationPanel'
 import { GlassTestPattern } from '../components/glassMode/GlassTestPattern'
 import { MirrorModeSelector } from '../components/glassMode/MirrorModeSelector'
+import { ConfirmDialog } from '../components/shared/ConfirmDialog'
+import { PromptDialog } from '../components/shared/PromptDialog'
 import { DEFAULT_CALIBRATION, getEffectiveColors, type CalibrationSettings } from '../engine/calibrationEngine'
 import { useWakeLock } from '../hooks/useWakeLock'
 import { useProfilesStore } from '../stores/profilesStore'
@@ -20,6 +22,8 @@ export function GlassTestPage() {
   const [settings, setSettings] = useState<CalibrationSettings>(DEFAULT_CALIBRATION)
   const [selectedProfileId, setSelectedProfileId] = useState<number | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
+  const [showSaveAsNewDialog, setShowSaveAsNewDialog] = useState(false)
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
 
   // Cargar los perfiles y, si ya existe alguno guardado, aplicar el más
   // reciente automáticamente — una sola vez al montar. Se resuelve dentro
@@ -51,27 +55,12 @@ export function GlassTestPage() {
     setSettings(profile)
   }
 
-  async function handleSaveAsNew() {
-    const name = window.prompt('Nombre del perfil (ej. Teléfono, Tablet, Teleprompter principal):', 'Nuevo perfil')
-    if (!name) return
-    const id = await createProfile(name, settings)
-    setSelectedProfileId(id)
-  }
-
   async function handleSaveChanges() {
     if (selectedProfileId != null) {
       await updateProfile(selectedProfileId, settings)
     } else {
-      await handleSaveAsNew()
+      setShowSaveAsNewDialog(true)
     }
-  }
-
-  async function handleDelete() {
-    if (selectedProfileId == null) return
-    if (!window.confirm('¿Eliminar este perfil de calibración?')) return
-    await deleteProfile(selectedProfileId)
-    setSelectedProfileId(null)
-    setSettings(DEFAULT_CALIBRATION)
   }
 
   const { background } = getEffectiveColors(settings)
@@ -142,7 +131,7 @@ export function GlassTestPage() {
               </button>
               <button
                 type="button"
-                onClick={handleSaveAsNew}
+                onClick={() => setShowSaveAsNewDialog(true)}
                 className="flex-1 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/5"
               >
                 Guardar como nuevo
@@ -150,7 +139,7 @@ export function GlassTestPage() {
               {selectedProfileId != null && (
                 <button
                   type="button"
-                  onClick={handleDelete}
+                  onClick={() => setShowDeleteDialog(true)}
                   className="rounded-md border border-red-500/30 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10"
                 >
                   Eliminar
@@ -166,6 +155,42 @@ export function GlassTestPage() {
           <CalibrationPanel settings={settings} onChange={handleChange} />
         </div>
       </div>
+
+      {showSaveAsNewDialog && (
+        <PromptDialog
+          title="Guardar como nuevo perfil"
+          label="Nombre del perfil"
+          placeholder="Ej. Teléfono, Tablet, Teleprompter principal"
+          confirmLabel="Guardar"
+          onConfirm={async (name) => {
+            const id = await createProfile(name, settings)
+            setSelectedProfileId(id)
+            setShowSaveAsNewDialog(false)
+          }}
+          onClose={() => setShowSaveAsNewDialog(false)}
+        />
+      )}
+
+      {showDeleteDialog && selectedProfileId != null && (
+        <ConfirmDialog
+          title="Eliminar perfil"
+          message="¿Eliminar este perfil de calibración? Esta acción no se puede deshacer."
+          actions={[
+            { label: 'Cancelar', variant: 'neutral', onClick: () => setShowDeleteDialog(false) },
+            {
+              label: 'Eliminar',
+              variant: 'danger',
+              onClick: async () => {
+                await deleteProfile(selectedProfileId)
+                setSelectedProfileId(null)
+                setSettings(DEFAULT_CALIBRATION)
+                setShowDeleteDialog(false)
+              },
+            },
+          ]}
+          onClose={() => setShowDeleteDialog(false)}
+        />
+      )}
     </div>
   )
 }

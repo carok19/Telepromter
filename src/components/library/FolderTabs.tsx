@@ -3,8 +3,8 @@
 // celular (ver Fase 0: ese fue justo el bug del menú lateral). Una sola
 // fila que se desliza de lado es segura en cualquier ancho de pantalla sin
 // ninguna lógica de "oculto por defecto en celular".
-import { useEffect, useState } from 'react'
 import type { FolderRecord } from '../../db/db'
+import { useDropdownMenu } from '../../hooks/useDropdownMenu'
 
 export type FolderFilter = 'all' | 'none' | number
 
@@ -18,20 +18,11 @@ interface FolderChipProps {
 }
 
 function FolderChip({ label, count, active, onSelect, onRename, onDelete }: FolderChipProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
   const canManage = onRename != null || onDelete != null
-
-  useEffect(() => {
-    if (!menuOpen) return
-    function closeMenu() {
-      setMenuOpen(false)
-    }
-    document.addEventListener('click', closeMenu)
-    return () => document.removeEventListener('click', closeMenu)
-  }, [menuOpen])
+  const { open, setOpen, openUpward, anchorRef, menuRef } = useDropdownMenu<HTMLDivElement>()
 
   return (
-    <div className="relative shrink-0">
+    <div ref={anchorRef} className="relative shrink-0">
       <button
         type="button"
         onClick={onSelect}
@@ -49,12 +40,12 @@ function FolderChip({ label, count, active, onSelect, onRename, onDelete }: Fold
             tabIndex={0}
             onClick={(e) => {
               e.stopPropagation()
-              setMenuOpen((v) => !v)
+              setOpen((v) => !v)
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.stopPropagation()
-                setMenuOpen((v) => !v)
+                setOpen((v) => !v)
               }
             }}
             className="ml-0.5 rounded px-1 text-gray-500 hover:bg-white/10 hover:text-gray-200"
@@ -64,16 +55,19 @@ function FolderChip({ label, count, active, onSelect, onRename, onDelete }: Fold
           </span>
         )}
       </button>
-      {menuOpen && canManage && (
+      {open && canManage && (
         <div
+          ref={menuRef}
           onClick={(e) => e.stopPropagation()}
-          className="absolute left-0 top-9 z-10 w-36 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
+          className={`absolute left-0 z-10 w-36 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg ${
+            openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+          }`}
         >
           {onRename && (
             <button
               type="button"
               onClick={() => {
-                setMenuOpen(false)
+                setOpen(false)
                 onRename()
               }}
               className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
@@ -85,7 +79,7 @@ function FolderChip({ label, count, active, onSelect, onRename, onDelete }: Fold
             <button
               type="button"
               onClick={() => {
-                setMenuOpen(false)
+                setOpen(false)
                 onDelete()
               }}
               className="block w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5"

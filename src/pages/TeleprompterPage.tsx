@@ -11,6 +11,7 @@ import {
 } from '../engine/calibrationEngine'
 import { LiveSettingsPanel } from '../components/teleprompter/LiveSettingsPanel'
 import { PairingModal } from '../components/remote/PairingModal'
+import { PromptDialog } from '../components/shared/PromptDialog'
 import { db, type ScriptRecord } from '../db/db'
 import { sanitizeContentHtml } from '../engine/contentSanitizer'
 import { countWords, DEFAULT_WPM, estimateDurationSeconds } from '../engine/duration'
@@ -259,6 +260,7 @@ function TeleprompterSession({
   const publishCalibration = useRemoteStore((s) => s.publishCalibration)
   const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
+  const [showSaveAsNewProfileDialog, setShowSaveAsNewProfileDialog] = useState(false)
   // B.1: se inicializa con el commandId YA VISTO (si `remoteSession` llega
   // con uno, porque este componente se está remontando tras un cambio de
   // guion con la sesión todavía viva) en vez de `null` — si no, el guard de
@@ -413,19 +415,15 @@ function TeleprompterSession({
   }
 
   // "Guardar en perfil": si hay un perfil elegido, sobreescribe sus valores;
-  // si no ("Predeterminado" con ajustes en vivo), pide un nombre y crea uno
-  // nuevo — mismo patrón que ya usa Glass Test (handleSaveChanges/
-  // handleSaveAsNew), sin reimplementarlo distinto acá.
+  // si no ("Predeterminado" con ajustes en vivo), pide un nombre con
+  // PromptDialog (ver su render más abajo) y crea uno nuevo — mismo patrón
+  // que ya usa Glass Test, sin reimplementarlo distinto acá.
   async function handleSaveLiveSettingsToProfile() {
-    const settingsToSave = liveSettings ?? DEFAULT_CALIBRATION
     if (selectedProfileId != null) {
-      await updateProfile(selectedProfileId, settingsToSave)
+      await updateProfile(selectedProfileId, liveSettings ?? DEFAULT_CALIBRATION)
       return
     }
-    const name = window.prompt('Nombre del perfil (ej. Teléfono, Tablet, Teleprompter principal):', 'Nuevo perfil')
-    if (!name) return
-    const id = await createProfile(name, settingsToSave)
-    handleSelectProfile(String(id))
+    setShowSaveAsNewProfileDialog(true)
   }
 
   // F8.4 parte B: restaurar la posición de lectura DESPUÉS de que un ajuste
@@ -855,6 +853,20 @@ function TeleprompterSession({
             onChange={handleLiveSettingsChange}
             onSave={handleSaveLiveSettingsToProfile}
             onClose={() => setSettingsPanelOpen(false)}
+          />
+        )}
+        {showSaveAsNewProfileDialog && (
+          <PromptDialog
+            title="Guardar como nuevo perfil"
+            label="Nombre del perfil"
+            placeholder="Ej. Teléfono, Tablet, Teleprompter principal"
+            confirmLabel="Guardar"
+            onConfirm={async (name) => {
+              const id = await createProfile(name, liveSettings ?? DEFAULT_CALIBRATION)
+              handleSelectProfile(String(id))
+              setShowSaveAsNewProfileDialog(false)
+            }}
+            onClose={() => setShowSaveAsNewProfileDialog(false)}
           />
         )}
         <footer
