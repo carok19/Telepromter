@@ -53,13 +53,26 @@ export function clampRemoteWpm(value: number | string | undefined): number | nul
   return Math.min(MAX_REMOTE_WPM, Math.max(MIN_REMOTE_WPM, value))
 }
 
+// Feature A (barra de progreso arrastrable) — valida 'seekToProgress' con el
+// mismo principio que clampRemoteWpm: el host nunca confía en el valor tal
+// cual. El remoto ya manda progreso normalizado (0-1), nunca píxeles (cada
+// host puede tener una geometría distinta), así que acá solo hace falta
+// descartar valores no numéricos y clampear al rango válido.
+export function clampSeekProgress(value: number | string | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return Math.min(1, Math.max(0, value))
+}
+
 // F8.4 parte A agrega 'seekForward'/'seekBack' (avanzar/retroceder una
 // cantidad fija de segundos de lectura, interpretada por el HOST con su
 // propia velocidad — nunca en píxeles) y 'setSpeed' (cambiar la velocidad
 // a un wpm objetivo, que el host vuelve a clampear/validar antes de
 // aplicar; ver el `value` de RemoteCommand). F8.4 parte B agrega
 // 'setCalibration' (tamaño de letra/margen/interlineado/alineación/espejo
-// en vivo — ver `param`/`value` y validateCalibrationCommand()).
+// en vivo — ver `param`/`value` y validateCalibrationCommand()). Feature A
+// (barra de progreso arrastrable) agrega 'seekToProgress': igual que
+// seekForward/seekBack, viaja como progreso normalizado (0-1), nunca
+// píxeles — ver clampSeekProgress().
 export type RemoteCommandType =
   | 'play'
   | 'pause'
@@ -69,6 +82,7 @@ export type RemoteCommandType =
   | 'seekBack'
   | 'setSpeed'
   | 'setCalibration'
+  | 'seekToProgress'
 
 export interface RemoteCommand {
   type: RemoteCommandType

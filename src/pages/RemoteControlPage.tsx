@@ -3,7 +3,7 @@
 // Envía comandos discretos al host y muestra el snapshot de reproducción
 // que el host publica — nunca mueve nada por sí mismo, nunca asume que un
 // comando llegó solo porque se tocó el botón.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { useParams } from 'react-router-dom'
 import { Logo } from '../components/shared/Logo'
 import { CALIBRATION_RANGES, DEFAULT_CALIBRATION, type MirrorMode, type TextAlign } from '../engine/calibrationEngine'
@@ -104,6 +104,121 @@ function useHoldRepeat(onFire: () => void) {
     onPointerUp: stop,
     onPointerCancel: stop,
     onPointerLeave: stop,
+  }
+}
+
+// Feature A: cuánto se throttlea el envío de 'seekToProgress' MIENTRAS se
+// arrastra el dedo (no el envío final al soltar, que siempre se manda sin
+// esperar). 150ms — igual de frecuente que HOLD_REPEAT_INTERVAL_MS — es
+// suficiente para que el host se sienta "seguido" en vivo sin saturar el
+// canal en un arrastre continuo.
+const SEEK_DRAG_THROTTLE_MS = 150
+
+// Barra de progreso arrastrable. Zona táctil alta (h-11, ~44px) sobre una
+// barra visual fina, siguiendo la convención táctil ya usada en los demás
+// controles del remoto. setPointerCapture en pointerdown es la pieza clave:
+// garantiza que move/up/cancel sigan llegando a ESTE elemento aunque el
+// dedo se mueva fuera de sus límites — así "soltar fuera de la barra"
+// siempre dispara el mismo commit() (con el valor ya clampeado 0-1 según la
+// posición final), nunca deja el gesto sin resolver. pointercancel (el
+// sistema interrumpe el gesto — cambio de app, gesto multitáctil, etc.) y
+// lostpointercapture (se perdió la captura sin pasar por up/cancel) van al
+// mismo cancel(): ninguno de los dos manda comando, así que nunca queda un
+// seek a medio aplicar ni el valor optimista congelado en pantalla.
+// Arrastrar mientras se reproduce no pausa nada: engine.seek() (el host)
+// solo cambia `status` de 'finished' a 'paused' si hace falta, nunca toca
+// un 'playing' en curso.
+//
+// `barRef` se recibe como parámetro (creado con useRef en el componente,
+// igual que useFullscreen(rootRef) en TeleprompterPage) en vez de crearse y
+// devolverse desde acá: devolver un ref dentro del objeto de retorno hace
+// que oxlint marque como "acceso a ref durante el render" cualquier lectura
+// de las demás propiedades del objeto en el JSX (falso positivo, pero real
+// en esta versión del linter) — así el JSX referencia el ref local
+// directamente (`ref={barRef}`), como ya hacen rootRef/viewportRef/contentRef.
+function useDraggableProgress(
+  barRef: RefObject<HTMLDivElement | null>,
+  sessionId: string | undefined,
+  send: (sessionId: string, value: number) => void,
+) {
+  const draggingRef = useRef(false)
+  const progressRef = useRef(0)
+  const lastSentAtRef = useRef(0)
+  const [dragging, setDragging] = useState(false)
+  const [dragProgress, setDragProgress] = useState(0)
+
+  function progressFromClientX(clientX: number): number {
+    const rect = barRef.current?.getBoundingClientRect()
+    if (!rect || rect.width <= 0) return progressRef.current
+    return Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+  }
+
+  function handlePointerDown(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!sessionId) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const value = progressFromClientX(e.clientX)
+    draggingRef.current = true
+    progressRef.current = value
+    lastSentAtRef.current = Date.now()
+    setDragging(true)
+    setDragProgress(value)
+    send(sessionId, value)
+  }
+
+  function handlePointerMove(e: ReactPointerEvent<HTMLDivElement>) {
+    if (!draggingRef.current) return
+    const value = progressFromClientX(e.clientX)
+    progressRef.current = value
+    setDragProgress(value)
+    if (!sessionId) return
+    const now = Date.now()
+    if (now - lastSentAtRef.current >= SEEK_DRAG_THROTTLE_MS) {
+      lastSentAtRef.current = now
+      send(sessionId, value)
+    }
+  }
+
+  // Envío final GARANTIZADO al soltar, sin esperar el throttle — así el
+  // punto exacto donde se soltó el dedo siempre llega, aunque el último
+  // pointermove haya caído dentro de la ventana de throttle y no se haya
+  // mandado.
+  function commit() {
+    if (!draggingRef.current) return
+    draggingRef.current = false
+    setDragging(false)
+    if (sessionId) send(sessionId, progressRef.current)
+  }
+
+  // Gesto abortado (pointercancel/lostpointercapture/pestaña oculta): NO se
+  // manda nada — el host se queda donde ya estaba, y el valor optimista
+  // deja de mostrarse (dragging vuelve a false, la barra vuelve a reflejar
+  // el progreso real publicado por el host).
+  function cancel() {
+    if (!draggingRef.current) return
+    draggingRef.current = false
+    setDragging(false)
+  }
+
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === 'hidden') cancel()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      cancel() // por si se desmonta el componente a mitad de un arrastre
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return {
+    dragging,
+    dragProgress,
+    onPointerDown: handlePointerDown,
+    onPointerMove: handlePointerMove,
+    onPointerUp: commit,
+    onPointerCancel: cancel,
+    onLostPointerCapture: cancel,
   }
 }
 
@@ -366,6 +481,16 @@ export function RemoteControlPage() {
     if (sessionId) void sendCommand(sessionId, 'seekForward')
   })
 
+  // Feature A: arrastrar la barra de progreso. send() ignora la promesa de
+  // sendCommand a propósito (mismo patrón que el resto de los comandos de
+  // este archivo) — un fallo de red puntual durante el arrastre no debe
+  // interrumpir el gesto ni mostrar un error, el próximo tick de movimiento
+  // (o el commit final) ya vuelve a intentarlo.
+  const seekBarRef = useRef<HTMLDivElement>(null)
+  const seekDrag = useDraggableProgress(seekBarRef, sessionId, (id, value) => {
+    void sendCommand(id, 'seekToProgress', value)
+  })
+
   function handleSpeedButtonRelease(hold: { onPointerUp: () => void }) {
     hold.onPointerUp()
     scheduleWpmRevert()
@@ -428,9 +553,13 @@ export function RemoteControlPage() {
   const playback = session?.playback ?? null
   const engineStatus = playback?.engineStatus ?? 'ready'
   const isPlaying = engineStatus === 'playing'
-  const progressPct = Math.round((playback?.progress ?? 0) * 100)
   const controlsDisabled = state !== 'connected' || !online
   const shownWpm = displayWpm ?? playback?.wpm ?? DEFAULT_WPM
+  // Mientras se arrastra, la barra y el porcentaje reflejan el valor
+  // optimista local (a dónde va a caer si se suelta ahora); en cuanto se
+  // suelta o se cancela, vuelve a reflejar lo que publique el host.
+  const shownProgress = seekDrag.dragging ? seekDrag.dragProgress : (playback?.progress ?? 0)
+  const progressPct = Math.round(shownProgress * 100)
 
   return (
     <div className="flex min-h-screen flex-col items-center gap-6 bg-[#0b0c10] p-6 text-center text-gray-100">
@@ -470,8 +599,34 @@ export function RemoteControlPage() {
           <p className="text-2xl font-semibold text-gray-100">{STATUS_LABELS[engineStatus] ?? engineStatus}</p>
 
           <div className="w-full">
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
-              <div className="h-full bg-blue-500 transition-[width]" style={{ width: `${progressPct}%` }} />
+            {/* Zona táctil alta (~44px, h-11) sobre una barra visual fina —
+                más fácil de agarrar con el dedo que la barra misma. Sin
+                transition-[width] mientras se arrastra: seguiría al dedo con
+                demora en vez de calcarlo exactamente. touch-none evita que
+                el navegador intercepte el gesto como scroll/zoom. */}
+            <div
+              ref={seekBarRef}
+              className="relative flex h-11 w-full touch-none items-center"
+              onPointerDown={controlsDisabled ? undefined : seekDrag.onPointerDown}
+              onPointerMove={controlsDisabled ? undefined : seekDrag.onPointerMove}
+              onPointerUp={seekDrag.onPointerUp}
+              onPointerCancel={seekDrag.onPointerCancel}
+              onLostPointerCapture={seekDrag.onLostPointerCapture}
+            >
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={`h-full bg-blue-500 ${seekDrag.dragging ? '' : 'transition-[width]'}`}
+                  style={{ width: `${progressPct}%` }}
+                />
+              </div>
+              {seekDrag.dragging && (
+                <div
+                  className="pointer-events-none absolute -top-9 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-xs font-semibold text-gray-100"
+                  style={{ left: `${progressPct}%` }}
+                >
+                  {progressPct}%
+                </div>
+              )}
             </div>
             <p className="mt-1 text-xs text-gray-500">{progressPct}%</p>
           </div>

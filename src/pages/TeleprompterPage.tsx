@@ -20,6 +20,7 @@ import { useIdleControls } from '../hooks/useIdleControls'
 import { useWakeLock } from '../hooks/useWakeLock'
 import {
   clampRemoteWpm,
+  clampSeekProgress,
   MAX_REMOTE_WPM,
   MIN_REMOTE_WPM,
   validateCalibrationCommand,
@@ -153,6 +154,13 @@ function TeleprompterSession({ id }: { id: string }) {
   const lastPublishRef = useRef<{ status: string; pausedByMarker: boolean; wpm: number; publishedAt: number } | null>(
     null,
   )
+  // Feature A (barra de progreso arrastrable): tras aplicar un
+  // 'seekToProgress', el remoto necesita ver la nueva posición de inmediato
+  // (no esperar hasta PLAYBACK_PUBLISH_INTERVAL_MS) para que soltar el dedo
+  // se sienta como una respuesta directa. Un ref (no state) porque solo lo
+  // lee el efecto de publicación en la próxima pasada, sin necesidad de
+  // disparar un render propio.
+  const forceImmediatePublishRef = useRef(false)
 
   // Nunca se ocultan mientras: hay un modal de emparejamiento abierto, hay
   // un error de control remoto visible, algún control del footer (p. ej.
@@ -422,6 +430,20 @@ function TeleprompterSession({ id }: { id: string }) {
     } else if (command.type === 'setSpeed') {
       const clamped = clampRemoteWpm(command.value)
       if (clamped != null) setSpeed(clamped)
+    } else if (command.type === 'seekToProgress') {
+      // Feature A: arrastrar la barra de progreso en el remoto. Mismo
+      // principio que seekForward/seekBack — progreso normalizado (0-1),
+      // nunca píxeles — pero acá el remoto ya calculó el valor final (según
+      // dónde soltó el dedo en SU pantalla), así que solo hace falta
+      // clampearlo/validarlo, no convertirlo desde segundos.
+      // engine.seek() nunca pausa una reproducción en curso: si status ya
+      // era 'playing', sigue reproduciendo desde la nueva posición sin
+      // interrupción (solo pasa de 'finished' a 'paused' si hacía falta).
+      const clamped = clampSeekProgress(command.value)
+      if (clamped != null) {
+        engine.seekToProgress(clamped)
+        forceImmediatePublishRef.current = true
+      }
     } else if (command.type === 'setCalibration') {
       const validated = validateCalibrationCommand(command.param, command.value)
       if (validated) {
@@ -471,9 +493,12 @@ function TeleprompterSession({ id }: { id: string }) {
     if (!remoteSessionId || !remoteSession?.remoteUid) return
     const now = Date.now()
     const prev = lastPublishRef.current
-    const changed = !prev || prev.status !== status || prev.pausedByMarker !== pausedByMarker || prev.wpm !== wpm
+    const forceImmediate = forceImmediatePublishRef.current
+    const changed =
+      !prev || prev.status !== status || prev.pausedByMarker !== pausedByMarker || prev.wpm !== wpm || forceImmediate
     const progressDue = !prev || now - prev.publishedAt >= PLAYBACK_PUBLISH_INTERVAL_MS
     if (!changed && !progressDue) return
+    forceImmediatePublishRef.current = false
     lastPublishRef.current = { status, pausedByMarker, wpm, publishedAt: now }
     publishRemotePlayback(remoteSessionId, {
       engineStatus: status,
