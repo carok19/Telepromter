@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
-import type { ScriptRecord } from '../../db/db'
+import type { FolderRecord, ScriptRecord } from '../../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../../engine/duration'
 
 interface ScriptCardProps {
   script: ScriptRecord
+  folders: FolderRecord[]
   onOpen: () => void
   onOpenTeleprompter: () => void
   onDuplicate: () => void
   onDelete: () => void
+  // folderId `null` = "Sin carpeta".
+  onMoveToFolder: (folderId: number | null) => void
 }
 
 function extractPreview(html: string): string {
@@ -16,13 +19,26 @@ function extractPreview(html: string): string {
   return text.length > 140 ? `${text.slice(0, 140)}…` : text
 }
 
-export function ScriptCard({ script, onOpen, onOpenTeleprompter, onDuplicate, onDelete }: ScriptCardProps) {
+export function ScriptCard({
+  script,
+  folders,
+  onOpen,
+  onOpenTeleprompter,
+  onDuplicate,
+  onDelete,
+  onMoveToFolder,
+}: ScriptCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  // "Mover a..." se expande DENTRO del mismo menú (una lista más, con
+  // "‹ Volver" arriba) en vez de un submenú aparte — más simple de
+  // implementar y de usar con pocas carpetas, que es el caso esperado acá.
+  const [showMoveMenu, setShowMoveMenu] = useState(false)
 
   useEffect(() => {
     if (!menuOpen) return
     function closeMenu() {
       setMenuOpen(false)
+      setShowMoveMenu(false)
     }
     document.addEventListener('click', closeMenu)
     return () => document.removeEventListener('click', closeMenu)
@@ -73,11 +89,18 @@ export function ScriptCard({ script, onOpen, onOpenTeleprompter, onDuplicate, on
             >
               ⋮
             </button>
-            {menuOpen && (
+            {menuOpen && !showMoveMenu && (
               <div
                 onClick={(e) => e.stopPropagation()}
-                className="absolute right-0 top-8 z-10 w-36 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
+                className="absolute right-0 top-8 z-10 w-40 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
               >
+                <button
+                  type="button"
+                  onClick={() => setShowMoveMenu(true)}
+                  className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
+                >
+                  Mover a...
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -98,6 +121,47 @@ export function ScriptCard({ script, onOpen, onOpenTeleprompter, onDuplicate, on
                 >
                   Eliminar
                 </button>
+              </div>
+            )}
+            {menuOpen && showMoveMenu && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="absolute right-0 top-8 z-10 max-h-56 w-44 overflow-y-auto rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowMoveMenu(false)}
+                  className="block w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-white/5"
+                >
+                  ‹ Volver
+                </button>
+                <button
+                  type="button"
+                  disabled={script.folderId == null}
+                  onClick={() => {
+                    setMenuOpen(false)
+                    setShowMoveMenu(false)
+                    onMoveToFolder(null)
+                  }}
+                  className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:bg-transparent"
+                >
+                  Sin carpeta
+                </button>
+                {folders.map((folder) => (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    disabled={script.folderId === folder.id}
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setShowMoveMenu(false)
+                      onMoveToFolder(folder.id!)
+                    }}
+                    className="block w-full truncate px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:bg-transparent"
+                  >
+                    {folder.name}
+                  </button>
+                ))}
               </div>
             )}
           </div>

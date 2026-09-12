@@ -7,6 +7,24 @@ export interface ScriptRecord {
   content: string
   createdAt: number
   updatedAt: number
+  // Carpetas: ausente (no `null`, para que Dexie pueda borrar la clave por
+  // completo con `update({ folderId: undefined })`) significa "Sin
+  // carpeta". Todo guion creado ANTES de esta fase simplemente no trae este
+  // campo — Dexie no reescribe filas existentes al subir de versión, así
+  // que no hace falta ninguna migración: se tratan igual que un guion
+  // nuevo sin carpeta elegida.
+  folderId?: number
+}
+
+// Una carpeta = solo nombre + timestamps. No lleva un color ni ningún otro
+// dato — la organización real (qué guion está en cuál) vive en
+// ScriptRecord.folderId, no acá, para no tener que mantener dos listas
+// sincronizadas.
+export interface FolderRecord {
+  id?: number
+  name: string
+  createdAt: number
+  updatedAt: number
 }
 
 // Un perfil guardado = la configuración de calibración (reutilizada tal
@@ -22,6 +40,7 @@ export interface CalibrationProfileRecord extends CalibrationSettings {
 class RobressDatabase extends Dexie {
   scripts!: Table<ScriptRecord, number>
   profiles!: Table<CalibrationProfileRecord, number>
+  folders!: Table<FolderRecord, number>
 
   constructor() {
     super('robress-teleprompter')
@@ -32,6 +51,17 @@ class RobressDatabase extends Dexie {
     this.version(2).stores({
       scripts: '++id, updatedAt, createdAt, title',
       profiles: '++id, updatedAt, name',
+    })
+    // v3 agrega carpetas: la tabla `folders` y el índice `folderId` en
+    // `scripts` (para poder hacer `where('folderId').equals(id)` al borrar
+    // una carpeta). Sin `.upgrade()`: Dexie no reescribe las filas de
+    // `scripts` ya existentes, así que simplemente no traen `folderId` —
+    // se comportan igual que un guion nuevo sin carpeta elegida, sin
+    // ninguna migración ni riesgo de perder guiones.
+    this.version(3).stores({
+      scripts: '++id, updatedAt, createdAt, title, folderId',
+      profiles: '++id, updatedAt, name',
+      folders: '++id, updatedAt, name',
     })
   }
 }
