@@ -63,6 +63,18 @@ export function clampSeekProgress(value: number | string | undefined): number | 
   return Math.min(1, Math.max(0, value))
 }
 
+// B.2 — valida el id de guion que pide un comando 'loadScript'. Solo
+// descarta lo obviamente inválido (no numérico); la existencia REAL del
+// guion y si sigue guardado (no un borrador) no puede comprobarse acá —
+// este archivo se mantiene sin dependencias de Dexie/IndexedDB a
+// propósito, para poder probar sus validadores standalone con jiti — esa
+// parte la hace el host con una consulta async antes de navegar (ver
+// TeleprompterPage.tsx), y avisa con publishNotice() si ya no existe.
+export function parseScriptIdCommand(value: number | string | undefined): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  return value
+}
+
 // F8.4 parte A agrega 'seekForward'/'seekBack' (avanzar/retroceder una
 // cantidad fija de segundos de lectura, interpretada por el HOST con su
 // propia velocidad — nunca en píxeles) y 'setSpeed' (cambiar la velocidad
@@ -72,7 +84,11 @@ export function clampSeekProgress(value: number | string | undefined): number | 
 // en vivo — ver `param`/`value` y validateCalibrationCommand()). Feature A
 // (barra de progreso arrastrable) agrega 'seekToProgress': igual que
 // seekForward/seekBack, viaja como progreso normalizado (0-1), nunca
-// píxeles — ver clampSeekProgress().
+// píxeles — ver clampSeekProgress(). B.2 agrega 'loadScript': `value` es
+// el id (número) del guion que el remoto pide abrir — ver
+// parseScriptIdCommand() para la validación sintáctica; si ese guion
+// existe de verdad y sigue guardado (no un borrador) se comprueba aparte,
+// del lado del host, con una consulta a Dexie (ver TeleprompterPage.tsx).
 export type RemoteCommandType =
   | 'play'
   | 'pause'
@@ -83,6 +99,7 @@ export type RemoteCommandType =
   | 'setSpeed'
   | 'setCalibration'
   | 'seekToProgress'
+  | 'loadScript'
 
 export interface RemoteCommand {
   type: RemoteCommandType
@@ -175,6 +192,45 @@ export interface RemotePlayback {
   // publica sin este campo (undefined), y subscribeToSession lo ignora en
   // vez de borrar el título vigente.
   scriptTitle?: string
+  // B.2: id real del guion que se está mostrando ahora — a diferencia de
+  // scriptTitle (cosmético, puede repetirse entre guiones), esto es lo
+  // que el remoto usa para marcar cuál está resaltado en la lista y
+  // calcular "Siguiente guion" dentro de la misma carpeta. Mismo criterio
+  // que scriptTitle: ausente mientras el guion nuevo todavía no cargó.
+  scriptId?: number
+}
+
+// ---------------------------------------------------------------------
+// B.2/B.3 — HOST → REMOTE: lista de guiones para elegir, agrupada por
+// carpeta, y avisos puntuales (p. ej. "ese guion ya no existe").
+// ---------------------------------------------------------------------
+export interface RemoteScriptListItem {
+  id: number
+  // Ya truncado y nunca vacío ("Sin título" en vez de "") antes de
+  // publicarse — ver TeleprompterPage.tsx. Solo guiones GUARDADOS llegan
+  // acá (nunca un borrador: el remoto no debería poder abrir algo que ni
+  // siquiera aparece en Mis guiones del host).
+  title: string
+}
+
+export interface RemoteScriptFolder {
+  // `null` = el bucket "Sin carpeta" (no una fila real en la tabla de
+  // carpetas) — mismo criterio que ya usa LibraryPage.
+  id: number | null
+  name: string
+  scripts: RemoteScriptListItem[]
+}
+
+export type RemoteScriptList = RemoteScriptFolder[]
+
+// Aviso puntual del host al remoto que no necesita persistir en ningún
+// campo de estado de reproducción/calibración — por ahora solo lo usa
+// 'loadScript' cuando el guion pedido ya no existe. `at` (no un booleano)
+// para que el remoto pueda detectar "llegó uno nuevo" incluso si el
+// mensaje es idéntico al anterior.
+export interface RemoteNotice {
+  message: string
+  at: number
 }
 
 export interface RemoteSession {
@@ -197,6 +253,11 @@ export interface RemoteSession {
   command?: RemoteCommand | null
   playback?: RemotePlayback | null
   calibration?: RemoteCalibration | null
+  // B.3: última lista de guiones publicada por el host, agrupada por
+  // carpeta. B.2: último aviso puntual (p. ej. "el guion pedido ya no
+  // existe").
+  scriptList?: RemoteScriptList | null
+  notice?: RemoteNotice | null
 }
 
 // ---------------------------------------------------------------------
@@ -261,6 +322,8 @@ interface ChannelEntry {
   commandListeners: Set<(command: RemoteCommand) => void>
   playbackListeners: Set<(playback: RemotePlayback) => void>
   calibrationListeners: Set<(calibration: RemoteCalibration) => void>
+  scriptListListeners: Set<(list: RemoteScriptList) => void>
+  noticeListeners: Set<(notice: RemoteNotice) => void>
   endedListeners: Set<() => void>
   // Emite cada vez que cambia remoteUid (confirmado por la tabla) o
   // remoteConnected (Presence coincidiendo con ese remoteUid).
@@ -342,6 +405,8 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
   const commandListeners = new Set<(command: RemoteCommand) => void>()
   const playbackListeners = new Set<(playback: RemotePlayback) => void>()
   const calibrationListeners = new Set<(calibration: RemoteCalibration) => void>()
+  const scriptListListeners = new Set<(list: RemoteScriptList) => void>()
+  const noticeListeners = new Set<(notice: RemoteNotice) => void>()
   const endedListeners = new Set<() => void>()
   const remoteStateListeners = new Set<(state: RemoteAuthState) => void>()
 
@@ -359,6 +424,8 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
     commandListeners,
     playbackListeners,
     calibrationListeners,
+    scriptListListeners,
+    noticeListeners,
     endedListeners,
     remoteStateListeners,
     confirmedRemoteUid: null,
@@ -376,6 +443,12 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
     })
     .on<RemoteCalibration>('broadcast', { event: 'calibration' }, ({ payload }) => {
       calibrationListeners.forEach((fn) => fn(payload))
+    })
+    .on<RemoteScriptList>('broadcast', { event: 'scriptList' }, ({ payload }) => {
+      scriptListListeners.forEach((fn) => fn(payload))
+    })
+    .on<RemoteNotice>('broadcast', { event: 'notice' }, ({ payload }) => {
+      noticeListeners.forEach((fn) => fn(payload))
     })
     .on('broadcast', { event: 'ended' }, () => {
       endedListeners.forEach((fn) => fn())
@@ -476,6 +549,8 @@ function rowToSession(row: SessionRow, remoteUidOverride?: string | null): Remot
     command: null,
     playback: null,
     calibration: null,
+    scriptList: null,
+    notice: null,
   }
 }
 
@@ -581,6 +656,16 @@ export function subscribeToSession(
     current = { ...current, calibration }
     emit()
   }
+  const onScriptList = (scriptList: RemoteScriptList) => {
+    if (!current) return
+    current = { ...current, scriptList }
+    emit()
+  }
+  const onNotice = (notice: RemoteNotice) => {
+    if (!current) return
+    current = { ...current, notice }
+    emit()
+  }
   const onEnded = () => {
     if (!current) return
     current = { ...current, status: 'ended' }
@@ -602,6 +687,8 @@ export function subscribeToSession(
   entry.commandListeners.add(onCommand)
   entry.playbackListeners.add(onPlayback)
   entry.calibrationListeners.add(onCalibration)
+  entry.scriptListListeners.add(onScriptList)
+  entry.noticeListeners.add(onNotice)
   entry.endedListeners.add(onEnded)
   entry.remoteStateListeners.add(onRemoteState)
 
@@ -622,6 +709,8 @@ export function subscribeToSession(
     entry.commandListeners.delete(onCommand)
     entry.playbackListeners.delete(onPlayback)
     entry.calibrationListeners.delete(onCalibration)
+    entry.scriptListListeners.delete(onScriptList)
+    entry.noticeListeners.delete(onNotice)
     entry.endedListeners.delete(onEnded)
     entry.remoteStateListeners.delete(onRemoteState)
     releaseChannel(client, sessionId)
@@ -740,6 +829,31 @@ export async function publishCalibration(sessionId: string, calibration: RemoteC
   const entry = ensureChannel(client, sessionId)
   await waitForSubscribed(entry)
   await entry.channel.send({ type: 'broadcast', event: 'calibration', payload: calibration })
+}
+
+// B.3 — HOST → REMOTE: la lista de guiones para elegir, agrupada por
+// carpeta. Se publica al conectarse el remoto y cada vez que cambia
+// (crear/borrar/mover un guion, o renombrar una carpeta) — ver el efecto
+// dedicado en TeleprompterPage.tsx que arma esta lista a partir de
+// scriptsStore.
+export async function publishScriptList(sessionId: string, list: RemoteScriptList): Promise<void> {
+  const client = getSupabaseClient()
+  if (!client) return
+  const entry = ensureChannel(client, sessionId)
+  await waitForSubscribed(entry)
+  await entry.channel.send({ type: 'broadcast', event: 'scriptList', payload: list })
+}
+
+// B.2 — HOST → REMOTE: aviso puntual (p. ej. "ese guion ya no existe" si
+// 'loadScript' pidió un id que se borró justo antes de que el comando
+// llegara) — nunca rompe la sesión, solo informa.
+export async function publishNotice(sessionId: string, message: string): Promise<void> {
+  const client = getSupabaseClient()
+  if (!client) return
+  const entry = ensureChannel(client, sessionId)
+  await waitForSubscribed(entry)
+  const notice: RemoteNotice = { message, at: Date.now() }
+  await entry.channel.send({ type: 'broadcast', event: 'notice', payload: notice })
 }
 
 // `SUBSCRIBED` en el estado del canal es el equivalente, por sesión, a lo

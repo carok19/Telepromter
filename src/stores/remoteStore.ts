@@ -16,7 +16,9 @@ import {
   getRemoteClientId,
   joinSessionAsRemote,
   publishCalibration as publishCalibrationRemote,
+  publishNotice as publishNoticeRemote,
   publishPlayback as publishPlaybackRemote,
+  publishScriptList as publishScriptListRemote,
   requestRemoteUidRefresh,
   sendCalibrationCommand as sendCalibrationCommandRemote,
   sendCommand as sendCommandRemote,
@@ -27,6 +29,7 @@ import {
   type RemoteCalibration,
   type RemoteCommandType,
   type RemotePlayback,
+  type RemoteScriptList,
   type RemoteSession,
 } from '../services/remoteSession'
 import { isRemoteControlConfigured } from '../services/supabase'
@@ -52,6 +55,10 @@ interface RemoteState {
     value: number | MirrorMode | TextAlign,
   ) => Promise<void>
   publishCalibration: (sessionId: string, calibration: RemoteCalibration) => Promise<void>
+  // B.3: lista de guiones agrupada por carpeta, y B.2: aviso puntual
+  // (p. ej. "el guion pedido ya no existe") — ver remoteSession.ts.
+  publishScriptList: (sessionId: string, list: RemoteScriptList) => Promise<void>
+  publishNotice: (sessionId: string, message: string) => Promise<void>
   subscribeConnectivity: (sessionId: string, callback: (connected: boolean) => void) => () => void
   // Pide reconfirmar remoteUid contra la tabla (get_remote_session). La
   // usa el host cuando llega un comando con un senderId que no reconoce,
@@ -109,6 +116,10 @@ export const useRemoteStore = create<RemoteState>((set) => ({
   sendCalibrationCommand: (sessionId, param, value) => sendCalibrationCommandRemote(sessionId, param, value),
 
   publishCalibration: (sessionId, calibration) => publishCalibrationRemote(sessionId, calibration),
+
+  publishScriptList: (sessionId, list) => publishScriptListRemote(sessionId, list),
+
+  publishNotice: (sessionId, message) => publishNoticeRemote(sessionId, message),
 
   subscribeConnectivity: (sessionId, callback) => subscribeToConnectivity(sessionId, callback),
 

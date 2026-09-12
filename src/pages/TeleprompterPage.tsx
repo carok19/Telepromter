@@ -1,3 +1,4 @@
+import { liveQuery } from 'dexie'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
@@ -12,7 +13,7 @@ import {
 import { LiveSettingsPanel } from '../components/teleprompter/LiveSettingsPanel'
 import { PairingModal } from '../components/remote/PairingModal'
 import { PromptDialog } from '../components/shared/PromptDialog'
-import { db, type ScriptRecord } from '../db/db'
+import { db, type FolderRecord, type ScriptRecord } from '../db/db'
 import { sanitizeContentHtml } from '../engine/contentSanitizer'
 import { countWords, DEFAULT_WPM, estimateDurationSeconds } from '../engine/duration'
 import { TeleprompterEngine } from '../engine/teleprompterEngine'
@@ -24,7 +25,10 @@ import {
   clampSeekProgress,
   MAX_REMOTE_WPM,
   MIN_REMOTE_WPM,
+  parseScriptIdCommand,
   validateCalibrationCommand,
+  type RemoteScriptFolder,
+  type RemoteScriptList,
   type RemoteSession,
 } from '../services/remoteSession'
 import { usePlayerStore } from '../stores/playerStore'
@@ -65,6 +69,19 @@ function stripPauseMarkersForGhost(html: string): string {
   return doc.body.innerHTML
 }
 
+// B.3: largo máximo de un título en la lista que ve el remoto — ahí el
+// espacio es mucho más chico que en Mis guiones, y un título larguísimo
+// rompería el layout de la lista agrupada.
+const REMOTE_TITLE_MAX_LENGTH = 60
+
+function truncateRemoteTitle(title: string): string {
+  const trimmed = title.trim()
+  if (!trimmed) return 'Sin título'
+  return trimmed.length > REMOTE_TITLE_MAX_LENGTH
+    ? `${trimmed.slice(0, REMOTE_TITLE_MAX_LENGTH).trimEnd()}…`
+    : trimmed
+}
+
 // B.1: el ciclo de vida de la sesión de control remoto (crearla, unirse a
 // una ya existente, la suscripción en vivo, el modal de emparejamiento, el
 // error de conexión) vive ACÁ — el único nivel de este archivo que NO se
@@ -96,6 +113,7 @@ export function TeleprompterPage() {
   const [remoteSession, setRemoteSession] = useState<RemoteSession | null>(null)
   const [showPairingModal, setShowPairingModal] = useState(false)
   const [remoteError, setRemoteError] = useState<string | null>(null)
+  const publishScriptList = useRemoteStore((s) => s.publishScriptList)
 
   // Suscripción en vivo a la sesión (F8.2). Si hostSessionId ya venía
   // seteado desde ANTES de este montaje (se sobrevivió un cambio de guion),
@@ -104,6 +122,61 @@ export function TeleprompterPage() {
     if (!hostSessionId) return
     return subscribeRemoteSession(hostSessionId, setRemoteSession)
   }, [hostSessionId, subscribeRemoteSession])
+
+  // B.3: guiones y carpetas para la lista que ve el remoto. Con liveQuery
+  // (en vez de leer una vez, o reutilizar useScriptsStore) esto se
+  // actualiza solo — sin esperar a que este componente se remonte — si el
+  // usuario crea, borra o mueve un guion durante la misma sesión de control
+  // remoto, desde esta pestaña o desde otra (Dexie propaga los cambios
+  // entre pestañas del mismo origen). Ya filtra a solo guardados
+  // (status !== 'draft') acá mismo, igual que useScriptsStore.
+  const [scriptsForRemote, setScriptsForRemote] = useState<{ scripts: ScriptRecord[]; folders: FolderRecord[] }>({
+    scripts: [],
+    folders: [],
+  })
+  useEffect(() => {
+    const subscription = liveQuery(async () => {
+      const [allScripts, folders] = await Promise.all([
+        db.scripts.orderBy('title').toArray(),
+        db.folders.orderBy('name').toArray(),
+      ])
+      return { scripts: allScripts.filter((s) => s.status !== 'draft'), folders }
+    }).subscribe({
+      next: setScriptsForRemote,
+      error: (err) => console.error('B.3: error leyendo guiones para la lista del remoto', err),
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // Agrupada por carpeta ("Sin carpeta" primero, después las carpetas en el
+  // mismo orden alfabético que ya usa Mis guiones) y con títulos truncados
+  // — lo que pide B.3 tal cual.
+  const remoteScriptList = useMemo<RemoteScriptList>(() => {
+    const { scripts, folders } = scriptsForRemote
+    const toItem = (s: ScriptRecord) => ({ id: s.id as number, title: truncateRemoteTitle(s.title) })
+    const sinCarpeta: RemoteScriptFolder = {
+      id: null,
+      name: 'Sin carpeta',
+      scripts: scripts.filter((s) => s.id != null && s.folderId == null).map(toItem),
+    }
+    const named: RemoteScriptFolder[] = folders
+      .filter((f) => f.id != null)
+      .map((f) => ({
+        id: f.id as number,
+        name: f.name,
+        scripts: scripts.filter((s) => s.id != null && s.folderId === f.id).map(toItem),
+      }))
+    return [sinCarpeta, ...named]
+  }, [scriptsForRemote])
+
+  // Se publica de nuevo cada vez que cambia la lista Y cada vez que el
+  // remoto se conecta (mismo criterio que la publicación de calibración más
+  // abajo, en TeleprompterSession) — así un remoto recién conectado la ve
+  // de inmediato, sin esperar a que algo más cambie.
+  useEffect(() => {
+    if (!hostSessionId || !remoteSession?.remoteConnected) return
+    publishScriptList(hostSessionId, remoteScriptList)
+  }, [hostSessionId, remoteSession?.remoteConnected, remoteScriptList, publishScriptList])
 
   // F8.6 (PWA): igual que antes, solo que ahora vive acá en vez de en
   // TeleprompterSession — sigue reflejando exactamente lo mismo
@@ -258,6 +331,7 @@ function TeleprompterSession({
 
   const publishRemotePlayback = useRemoteStore((s) => s.publishPlayback)
   const publishCalibration = useRemoteStore((s) => s.publishCalibration)
+  const publishNotice = useRemoteStore((s) => s.publishNotice)
   const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
   const [showSaveAsNewProfileDialog, setShowSaveAsNewProfileDialog] = useState(false)
@@ -525,6 +599,26 @@ function TeleprompterSession({
       if (validated) {
         applyLiveSettings({ ...(liveSettings ?? DEFAULT_CALIBRATION), [validated.param]: validated.value })
       }
+    } else if (command.type === 'loadScript') {
+      // B.2: comando validado solo en su forma (parseScriptIdCommand exige
+      // un número finito) — si el guion pedido ya no existe, o existe pero
+      // es un borrador nunca guardado (no debería listarse nunca en el
+      // remoto, pero por si el id llegó de un envío viejo/manipulado), se
+      // avisa con publishNotice en vez de romper la sesión. navigate() acá
+      // es seguro aunque este componente esté por desmontarse (cambia el
+      // :id de la ruta, no la familia de rutas) — ver el comentario de
+      // TeleprompterPage sobre por qué eso no corta el emparejamiento.
+      const targetId = parseScriptIdCommand(command.value)
+      if (targetId != null) {
+        void (async () => {
+          const target = await db.scripts.get(targetId)
+          if (target && target.status !== 'draft') {
+            navigate(`/teleprompter/${targetId}`)
+          } else if (remoteSessionId) {
+            await publishNotice(remoteSessionId, 'El guion pedido ya no existe.')
+          }
+        })()
+      }
     }
     // applyLiveSettings se omite a propósito: es una función local (no
     // memoizada) cuya identidad cambia en cada render — listarla haría que
@@ -547,6 +641,8 @@ function TeleprompterSession({
     progress,
     setSpeed,
     liveSettings,
+    navigate,
+    publishNotice,
   ])
 
   // F8.3/F8.4 — HOST → REMOTE: publica un snapshot de reproducción
@@ -598,6 +694,9 @@ function TeleprompterSession({
       pausedByMarker,
       updatedAt: now,
       scriptTitle: script?.title,
+      // B.2: id real del guion en pantalla — el remoto lo usa para marcar
+      // cuál está resaltado en la lista y calcular "Siguiente guion".
+      scriptId: Number(id),
     })
   }, [
     remoteSessionId,
@@ -608,6 +707,7 @@ function TeleprompterSession({
     pausedByMarker,
     script?.title,
     publishRemotePlayback,
+    id,
   ])
 
   // F8.4 parte B — HOST → REMOTE: publica el snapshot de calibración

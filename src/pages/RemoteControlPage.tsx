@@ -3,8 +3,9 @@
 // Envía comandos discretos al host y muestra el snapshot de reproducción
 // que el host publica — nunca mueve nada por sí mismo, nunca asume que un
 // comando llegó solo porque se tocó el botón.
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { useParams } from 'react-router-dom'
+import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { Logo } from '../components/shared/Logo'
 import { CALIBRATION_RANGES, DEFAULT_CALIBRATION, type MirrorMode, type TextAlign } from '../engine/calibrationEngine'
 import { DEFAULT_WPM } from '../engine/duration'
@@ -52,6 +53,16 @@ const HOLD_REPEAT_INTERVAL_MS = 150
 // valor publicado por el host en vez del valor local optimista que se fue
 // acumulando mientras se mantenía presionado.
 const WPM_DISPLAY_REVERT_DELAY_MS = 1000
+
+// B.2: cuánto tiempo queda visible el aviso puntual del host (p. ej. "el
+// guion pedido ya no existe") antes de ocultarse solo.
+const NOTICE_DISPLAY_MS = 4000
+
+// B.2: a partir de qué progreso se considera que el guion actual está "a
+// medias" (y por lo tanto hace falta confirmar antes de cambiar de guion) —
+// un valor bajo a propósito, para no molestar con la confirmación si recién
+// se apretó Play hace un instante.
+const MIDWAY_PROGRESS_THRESHOLD = 0.02
 
 // Hook genérico de "mantener presionado": primer disparo inmediato al
 // presionar, luego repetición tras HOLD_INITIAL_DELAY_MS cada
@@ -363,6 +374,15 @@ export function RemoteControlPage() {
   const [editingSpeed, setEditingSpeed] = useState(false)
   const [speedInputValue, setSpeedInputValue] = useState('')
 
+  // B.2/B.3: panel de lista de guiones (se abre/cierra, no tapa los
+  // controles porque es parte del flujo normal de la página, no un overlay
+  // — ver el JSX más abajo), el guion pendiente de confirmación cuando el
+  // actual está a medias, y el aviso puntual del host (p. ej. "el guion
+  // pedido ya no existe").
+  const [scriptListOpen, setScriptListOpen] = useState(false)
+  const [pendingScriptId, setPendingScriptId] = useState<number | null>(null)
+  const [visibleNotice, setVisibleNotice] = useState<RemoteSession['notice']>(null)
+
   useEffect(() => {
     if (!sessionId || !configured) return
 
@@ -414,6 +434,18 @@ export function RemoteControlPage() {
       if (revertTimeoutRef.current != null) window.clearTimeout(revertTimeoutRef.current)
     }
   }, [])
+
+  // B.2: muestra el aviso puntual que publique el host (p. ej. "el guion
+  // pedido ya no existe") unos segundos y luego lo oculta solo. Clave en
+  // `notice.at` (no en el objeto entero) para que dos avisos con el MISMO
+  // texto seguidos igual reinicien el temporizador y vuelvan a mostrarse.
+  useEffect(() => {
+    if (!session?.notice) return
+    setVisibleNotice(session.notice)
+    const timeout = window.setTimeout(() => setVisibleNotice(null), NOTICE_DISPLAY_MS)
+    return () => window.clearTimeout(timeout)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.notice?.at])
 
   // F8.6 (PWA): refleja esta sesión en remoteStore para que
   // usePwaUpdate.ts (montado fuera de esta pantalla) sepa que este
@@ -561,6 +593,49 @@ export function RemoteControlPage() {
   const shownProgress = seekDrag.dragging ? seekDrag.dragProgress : (playback?.progress ?? 0)
   const progressPct = Math.round(shownProgress * 100)
 
+  // B.3: lista agrupada por carpeta que publica el host — ya viene filtrada
+  // a solo guardados y con títulos truncados/"Sin título" resueltos desde
+  // ahí (ver TeleprompterPage.tsx), este componente solo la muestra.
+  const scriptList = session?.scriptList ?? null
+  const currentScriptId = playback?.scriptId ?? null
+
+  // "Siguiente guion" pedido en B.3: el siguiente guion DENTRO de la misma
+  // carpeta que el que se está mostrando ahora — null si el actual no está
+  // en la lista (todavía no llegó el primer snapshot) o si ya es el último
+  // de su carpeta.
+  const currentFolder = useMemo(
+    () => scriptList?.find((folder) => folder.scripts.some((s) => s.id === currentScriptId)) ?? null,
+    [scriptList, currentScriptId],
+  )
+  const nextScriptInFolder = useMemo(() => {
+    if (!currentFolder) return null
+    const index = currentFolder.scripts.findIndex((s) => s.id === currentScriptId)
+    if (index < 0 || index >= currentFolder.scripts.length - 1) return null
+    return currentFolder.scripts[index + 1]
+  }, [currentFolder, currentScriptId])
+
+  // B.2: "el guion actual está a medias" = ya avanzó (más que
+  // MIDWAY_PROGRESS_THRESHOLD) y no está simplemente terminado — en ese
+  // caso se pide confirmación con UI propia (ConfirmDialog) ANTES de mandar
+  // loadScript; si no, el cambio es directo. Pedir el mismo guion que ya
+  // está mostrándose no hace nada (ni confirma ni manda comando).
+  function requestLoadScript(targetId: number) {
+    if (!sessionId || targetId === currentScriptId) return
+    setScriptListOpen(false)
+    const isMidway =
+      playback != null && playback.engineStatus !== 'finished' && playback.progress > MIDWAY_PROGRESS_THRESHOLD
+    if (isMidway) {
+      setPendingScriptId(targetId)
+    } else {
+      void sendCommand(sessionId, 'loadScript', targetId)
+    }
+  }
+
+  function confirmPendingLoadScript() {
+    if (sessionId && pendingScriptId != null) void sendCommand(sessionId, 'loadScript', pendingScriptId)
+    setPendingScriptId(null)
+  }
+
   return (
     <div className="flex min-h-screen flex-col items-center gap-6 bg-[#0b0c10] p-6 text-center text-gray-100">
       <div className="mt-4">
@@ -571,6 +646,15 @@ export function RemoteControlPage() {
       {state === 'connected' && !online && (
         <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
           Conexión perdida. Intentando reconectar…
+        </p>
+      )}
+
+      {/* B.2: aviso puntual del host (p. ej. "el guion pedido ya no existe")
+          — se oculta solo tras NOTICE_DISPLAY_MS, nunca rompe la sesión ni
+          bloquea nada más. */}
+      {visibleNotice && (
+        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+          {visibleNotice.message}
         </p>
       )}
 
@@ -595,6 +679,66 @@ export function RemoteControlPage() {
       {state === 'connected' && (
         <div className="flex w-full max-w-xs flex-col items-center gap-6">
           {session?.scriptTitle && <p className="text-sm text-gray-400">{session.scriptTitle}</p>}
+
+          {/* B.2/B.3: elegir guion desde el remoto. El botón abre/cierra un
+              panel EN EL FLUJO NORMAL de la página (no un overlay) — al
+              abrirse empuja el resto de los controles hacia abajo en vez de
+              taparlos, y siguen alcanzables con scroll. */}
+          <div className="flex w-full items-center gap-2">
+            <button
+              type="button"
+              disabled={controlsDisabled || !scriptList}
+              onClick={() => setScriptListOpen((v) => !v)}
+              className="flex-1 rounded-lg border border-white/10 py-3 text-sm text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {scriptListOpen ? 'Cerrar lista ▲' : '📄 Elegir guion ▼'}
+            </button>
+            <button
+              type="button"
+              disabled={controlsDisabled || !nextScriptInFolder}
+              onClick={() => nextScriptInFolder && requestLoadScript(nextScriptInFolder.id)}
+              className="flex-1 rounded-lg border border-white/10 py-3 text-sm text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Siguiente guion ⏭
+            </button>
+          </div>
+
+          {scriptListOpen && scriptList && (
+            <div className="max-h-72 w-full overflow-y-auto rounded-lg border border-white/10 bg-[#0f1117] p-2 text-left">
+              {scriptList.every((folder) => folder.scripts.length === 0) ? (
+                <p className="p-3 text-center text-sm text-gray-500">No hay guiones guardados.</p>
+              ) : (
+                scriptList.map(
+                  (folder) =>
+                    folder.scripts.length > 0 && (
+                      <div key={folder.id ?? 'sin-carpeta'} className="mb-3 last:mb-0">
+                        <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          {folder.name}
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          {folder.scripts.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              disabled={controlsDisabled}
+                              onClick={() => requestLoadScript(s.id)}
+                              className={`rounded-md px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                                s.id === currentScriptId
+                                  ? 'bg-blue-600/20 font-semibold text-blue-400'
+                                  : 'text-gray-300 hover:bg-white/5'
+                              }`}
+                            >
+                              {s.id === currentScriptId ? '▶ ' : ''}
+                              {s.title}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ),
+                )
+              )}
+            </div>
+          )}
 
           <p className="text-2xl font-semibold text-gray-100">{STATUS_LABELS[engineStatus] ?? engineStatus}</p>
 
@@ -769,6 +913,20 @@ export function RemoteControlPage() {
             ↻ Reiniciar
           </button>
         </div>
+      )}
+
+      {/* B.2: confirmación con UI propia (nunca window.confirm) antes de
+          cambiar de guion si el actual está a medias. */}
+      {pendingScriptId != null && (
+        <ConfirmDialog
+          title="¿Cambiar de guion?"
+          message="El guion actual está a medias. Si cambias ahora, la próxima vez que lo vuelvas a abrir empieza de nuevo desde el principio."
+          actions={[
+            { label: 'Cambiar de guion', onClick: confirmPendingLoadScript, variant: 'primary' },
+            { label: 'Seguir con este', onClick: () => setPendingScriptId(null), variant: 'neutral' },
+          ]}
+          onClose={() => setPendingScriptId(null)}
+        />
       )}
     </div>
   )
