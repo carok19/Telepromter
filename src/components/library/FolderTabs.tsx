@@ -3,6 +3,7 @@
 // celular (ver Fase 0: ese fue justo el bug del menú lateral). Una sola
 // fila que se desliza de lado es segura en cualquier ancho de pantalla sin
 // ninguna lógica de "oculto por defecto en celular".
+import { createPortal } from 'react-dom'
 import type { FolderRecord } from '../../db/db'
 import { useDropdownMenu } from '../../hooks/useDropdownMenu'
 
@@ -19,7 +20,7 @@ interface FolderChipProps {
 
 function FolderChip({ label, count, active, onSelect, onRename, onDelete }: FolderChipProps) {
   const canManage = onRename != null || onDelete != null
-  const { open, setOpen, openUpward, anchorRef, menuRef } = useDropdownMenu<HTMLDivElement>()
+  const { open, setOpen, position, anchorRef, menuRef } = useDropdownMenu<HTMLDivElement>('left')
 
   return (
     <div ref={anchorRef} className="relative shrink-0">
@@ -55,40 +56,47 @@ function FolderChip({ label, count, active, onSelect, onRename, onDelete }: Fold
           </span>
         )}
       </button>
-      {open && canManage && (
-        <div
-          ref={menuRef}
-          onClick={(e) => e.stopPropagation()}
-          className={`absolute left-0 z-10 w-36 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg ${
-            openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
-          }`}
-        >
-          {onRename && (
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false)
-                onRename()
-              }}
-              className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
-            >
-              Renombrar
-            </button>
-          )}
-          {onDelete && (
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false)
-                onDelete()
-              }}
-              className="block w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5"
-            >
-              Eliminar
-            </button>
-          )}
-        </div>
-      )}
+      {open &&
+        canManage &&
+        createPortal(
+          <div
+            ref={menuRef}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: position.top ?? undefined,
+              bottom: position.bottom ?? undefined,
+              left: position.left,
+            }}
+            className="z-50 w-36 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
+          >
+            {onRename && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false)
+                  onRename()
+                }}
+                className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
+              >
+                Renombrar
+              </button>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false)
+                  onDelete()
+                }}
+                className="block w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5"
+              >
+                Eliminar
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { FolderRecord, ScriptRecord } from '../../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../../engine/duration'
 import { useDropdownMenu } from '../../hooks/useDropdownMenu'
@@ -37,9 +38,13 @@ export function ScriptCard({
   // pasar de la lista principal a "Mover a..." sin cerrarse — hay que
   // volver a medir la posición (arriba/abajo) en ese momento, no solo al
   // abrir.
-  const { open: menuOpen, setOpen: setMenuOpen, openUpward, anchorRef, menuRef } = useDropdownMenu<HTMLDivElement>(
-    showMoveMenu,
-  )
+  const {
+    open: menuOpen,
+    setOpen: setMenuOpen,
+    position,
+    anchorRef,
+    menuRef,
+  } = useDropdownMenu<HTMLDivElement>('right', showMoveMenu)
 
   function closeMenu() {
     setMenuOpen(false)
@@ -91,85 +96,99 @@ export function ScriptCard({
             >
               ⋮
             </button>
-            {menuOpen && !showMoveMenu && (
-              <div
-                ref={menuRef}
-                onClick={(e) => e.stopPropagation()}
-                className={`absolute right-0 z-10 w-40 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg ${
-                  openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setShowMoveMenu(true)}
-                  className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
-                >
-                  Mover a...
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeMenu()
-                    onDuplicate()
+            {menuOpen &&
+              !showMoveMenu &&
+              createPortal(
+                <div
+                  ref={menuRef}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: 'fixed',
+                    top: position.top ?? undefined,
+                    bottom: position.bottom ?? undefined,
+                    left: position.left,
                   }}
-                  className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
+                  className="z-50 w-40 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
                 >
-                  Duplicar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    closeMenu()
-                    onDelete()
-                  }}
-                  className="block w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5"
-                >
-                  Eliminar
-                </button>
-              </div>
-            )}
-            {menuOpen && showMoveMenu && (
-              <div
-                ref={menuRef}
-                onClick={(e) => e.stopPropagation()}
-                className={`absolute right-0 z-10 max-h-56 w-44 overflow-y-auto rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg ${
-                  openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => setShowMoveMenu(false)}
-                  className="block w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-white/5"
-                >
-                  ‹ Volver
-                </button>
-                <button
-                  type="button"
-                  disabled={script.folderId == null}
-                  onClick={() => {
-                    closeMenu()
-                    onMoveToFolder(null)
-                  }}
-                  className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:bg-transparent"
-                >
-                  Sin carpeta
-                </button>
-                {folders.map((folder) => (
                   <button
-                    key={folder.id}
                     type="button"
-                    disabled={script.folderId === folder.id}
+                    onClick={() => setShowMoveMenu(true)}
+                    className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
+                  >
+                    Mover a...
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       closeMenu()
-                      onMoveToFolder(folder.id!)
+                      onDuplicate()
                     }}
-                    className="block w-full truncate px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:bg-transparent"
+                    className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
                   >
-                    {folder.name}
+                    Duplicar
                   </button>
-                ))}
-              </div>
-            )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeMenu()
+                      onDelete()
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5"
+                  >
+                    Eliminar
+                  </button>
+                </div>,
+                document.body,
+              )}
+            {menuOpen &&
+              showMoveMenu &&
+              createPortal(
+                <div
+                  ref={menuRef}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    position: 'fixed',
+                    top: position.top ?? undefined,
+                    bottom: position.bottom ?? undefined,
+                    left: position.left,
+                  }}
+                  className="z-50 max-h-56 w-44 overflow-y-auto rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setShowMoveMenu(false)}
+                    className="block w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-white/5"
+                  >
+                    ‹ Volver
+                  </button>
+                  <button
+                    type="button"
+                    disabled={script.folderId == null}
+                    onClick={() => {
+                      closeMenu()
+                      onMoveToFolder(null)
+                    }}
+                    className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:bg-transparent"
+                  >
+                    Sin carpeta
+                  </button>
+                  {folders.map((folder) => (
+                    <button
+                      key={folder.id}
+                      type="button"
+                      disabled={script.folderId === folder.id}
+                      onClick={() => {
+                        closeMenu()
+                        onMoveToFolder(folder.id!)
+                      }}
+                      className="block w-full truncate px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:text-gray-600 disabled:hover:bg-transparent"
+                    >
+                      {folder.name}
+                    </button>
+                  ))}
+                </div>,
+                document.body,
+              )}
           </div>
         </div>
       </div>
