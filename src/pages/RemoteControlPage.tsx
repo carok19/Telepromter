@@ -3,7 +3,7 @@
 // Envía comandos discretos al host y muestra el snapshot de reproducción
 // que el host publica — nunca mueve nada por sí mismo, nunca asume que un
 // comando llegó solo porque se tocó el botón.
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { useParams } from 'react-router-dom'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { Logo } from '../components/shared/Logo'
@@ -599,21 +599,6 @@ export function RemoteControlPage() {
   const scriptList = session?.scriptList ?? null
   const currentScriptId = playback?.scriptId ?? null
 
-  // "Siguiente guion" pedido en B.3: el siguiente guion DENTRO de la misma
-  // carpeta que el que se está mostrando ahora — null si el actual no está
-  // en la lista (todavía no llegó el primer snapshot) o si ya es el último
-  // de su carpeta.
-  const currentFolder = useMemo(
-    () => scriptList?.find((folder) => folder.scripts.some((s) => s.id === currentScriptId)) ?? null,
-    [scriptList, currentScriptId],
-  )
-  const nextScriptInFolder = useMemo(() => {
-    if (!currentFolder) return null
-    const index = currentFolder.scripts.findIndex((s) => s.id === currentScriptId)
-    if (index < 0 || index >= currentFolder.scripts.length - 1) return null
-    return currentFolder.scripts[index + 1]
-  }, [currentFolder, currentScriptId])
-
   // B.2: "el guion actual está a medias" = ya avanzó (más que
   // MIDWAY_PROGRESS_THRESHOLD) y no está simplemente terminado — en ese
   // caso se pide confirmación con UI propia (ConfirmDialog) ANTES de mandar
@@ -684,24 +669,14 @@ export function RemoteControlPage() {
               panel EN EL FLUJO NORMAL de la página (no un overlay) — al
               abrirse empuja el resto de los controles hacia abajo en vez de
               taparlos, y siguen alcanzables con scroll. */}
-          <div className="flex w-full items-center gap-2">
-            <button
-              type="button"
-              disabled={controlsDisabled || !scriptList}
-              onClick={() => setScriptListOpen((v) => !v)}
-              className="flex-1 rounded-lg border border-white/10 py-3 text-sm text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {scriptListOpen ? 'Cerrar lista ▲' : '📄 Elegir guion ▼'}
-            </button>
-            <button
-              type="button"
-              disabled={controlsDisabled || !nextScriptInFolder}
-              onClick={() => nextScriptInFolder && requestLoadScript(nextScriptInFolder.id)}
-              className="flex-1 rounded-lg border border-white/10 py-3 text-sm text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Siguiente guion ⏭
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={controlsDisabled || !scriptList}
+            onClick={() => setScriptListOpen((v) => !v)}
+            className="w-full rounded-lg border border-white/10 py-3 text-sm text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {scriptListOpen ? 'Cerrar lista ▲' : '📄 Elegir guion ▼'}
+          </button>
 
           {scriptListOpen && scriptList && (
             <div className="max-h-72 w-full overflow-y-auto rounded-lg border border-white/10 bg-[#0f1117] p-2 text-left">
