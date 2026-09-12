@@ -11,9 +11,21 @@ import logo from '../assets/logo.svg'
 import { FolderCard } from '../components/library/FolderCard'
 import { FabMenu } from '../components/shared/FabMenu'
 import { PromptDialog } from '../components/shared/PromptDialog'
-import { FileTextIcon, SettingsIcon } from '../components/shared/Icons'
+import { ChevronDownIcon, FileTextIcon, SearchIcon, SettingsIcon } from '../components/shared/Icons'
 import { formatRelativeDate } from '../engine/relativeDate'
 import { useScriptsStore } from '../stores/scriptsStore'
+import {
+  LIB_GRID_GAP,
+  LIB_PAGE,
+  LIB_RADIUS_CARD,
+  LIB_SEARCH_INPUT,
+  LIB_SORT_SELECT,
+  LIB_SURFACE,
+  LIB_SURFACE_HOVER,
+  LIB_TEXT_FAINT,
+  LIB_TEXT_MUTED,
+  LIB_TITLE,
+} from '../styles/libraryTokens'
 
 type SortOption = 'recientes' | 'antiguos' | 'titulo'
 
@@ -120,47 +132,55 @@ export function LibraryPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-5 bg-[#0b0c10] px-4 py-4 text-gray-100">
-      <header className="flex items-center justify-between">
+    <div className={LIB_PAGE}>
+      <header className="mb-5 flex items-center justify-between">
         <span className="h-9 w-9" aria-hidden="true" />
         <img src={logo} alt="Robress Teleprompter" width={36} height={36} className="rounded-lg" />
         <button
           type="button"
           onClick={() => navigate('/configuracion')}
           aria-label="Configuración"
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-[#12151c] text-gray-300 hover:bg-white/5"
+          className={`flex h-9 w-9 items-center justify-center rounded-full ${LIB_SURFACE} ${LIB_TEXT_MUTED} ${LIB_SURFACE_HOVER}`}
         >
           <SettingsIcon className="h-4 w-4" />
         </button>
       </header>
 
-      <h1 className="text-2xl font-semibold text-gray-100">Guiones &amp; Carpetas</h1>
+      <h1 className={LIB_TITLE}>Guiones &amp; Carpetas</h1>
 
-      <div className="flex items-center gap-2">
+      <div className="relative mt-5">
+        <SearchIcon className={`pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar guiones y carpetas..."
-          className="min-w-0 flex-1 rounded-lg border border-white/10 bg-[#12151c] px-3 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
+          className={LIB_SEARCH_INPUT}
         />
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as SortOption)}
-          className="shrink-0 rounded-lg border border-white/10 bg-[#12151c] px-2.5 py-2.5 text-sm text-gray-300 focus:border-blue-500 focus:outline-none"
-        >
-          {SORT_OPTIONS.map(([value, label]) => (
-            <option key={value} value={value}>
-              {label}
-            </option>
-          ))}
-        </select>
       </div>
 
-      {loading && <p className="text-sm text-gray-500">Cargando...</p>}
+      <div className="mt-2.5 mb-5 flex items-center justify-end gap-1.5">
+        <span className={`text-[13px] ${LIB_TEXT_FAINT}`}>Ordenar por</span>
+        <div className="relative">
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortOption)}
+            className={LIB_SORT_SELECT}
+          >
+            {SORT_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value} className="bg-[#1e2128] text-white">
+                {label}
+              </option>
+            ))}
+          </select>
+          <ChevronDownIcon className={`pointer-events-none absolute top-1/2 right-0 h-3 w-3 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
+        </div>
+      </div>
+
+      {loading && <p className={`text-sm ${LIB_TEXT_MUTED}`}>Cargando...</p>}
 
       {!loading && visibleFolders.length === 0 && matchingScripts.length === 0 && (
-        <p className="text-sm text-gray-500">
+        <p className={`text-sm ${LIB_TEXT_MUTED}`}>
           {term
             ? 'No se encontraron carpetas ni guiones con ese término.'
             : 'Todavía no tenés guiones ni carpetas. Creá el primero con el botón +.'}
@@ -168,7 +188,7 @@ export function LibraryPage() {
       )}
 
       {visibleFolders.length > 0 && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className={`grid grid-cols-2 ${LIB_GRID_GAP}`}>
           {visibleFolders.map((folder) => (
             <FolderCard
               key={folder.folderId ?? 'sin-carpeta'}
@@ -183,8 +203,8 @@ export function LibraryPage() {
       )}
 
       {term && (
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">
+        <div className="mt-5">
+          <p className={`mb-2.5 text-xs font-semibold tracking-wide uppercase ${LIB_TEXT_FAINT}`}>
             {matchingScripts.length > 0 ? 'Guiones encontrados' : 'Sin guiones encontrados'}
           </p>
           <div className="flex flex-col gap-2">
@@ -193,11 +213,11 @@ export function LibraryPage() {
                 key={result.id}
                 type="button"
                 onClick={() => navigate(`/teleprompter/${result.id}`)}
-                className="flex items-center gap-3 rounded-lg border border-white/10 bg-[#12151c] px-3 py-2.5 text-left transition-colors hover:border-blue-500/40"
+                className={`flex items-center gap-3 ${LIB_RADIUS_CARD} ${LIB_SURFACE} px-4 py-3 text-left transition-colors ${LIB_SURFACE_HOVER}`}
               >
-                <FileTextIcon className="h-4 w-4 shrink-0 text-blue-400" />
-                <span className="min-w-0 flex-1 truncate text-sm text-gray-100">{result.title}</span>
-                <span className="shrink-0 rounded-full bg-white/5 px-2 py-0.5 text-[11px] text-gray-500">
+                <FileTextIcon className={`h-4 w-4 shrink-0 ${LIB_TEXT_MUTED}`} />
+                <span className="min-w-0 flex-1 truncate text-sm text-white">{result.title}</span>
+                <span className={`shrink-0 rounded-full bg-white/5 px-2 py-0.5 text-[11px] ${LIB_TEXT_MUTED}`}>
                   {result.folderName}
                 </span>
               </button>

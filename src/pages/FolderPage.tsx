@@ -16,9 +16,20 @@ import { ScriptCard } from '../components/library/ScriptCard'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { FabMenu } from '../components/shared/FabMenu'
 import { PromptDialog } from '../components/shared/PromptDialog'
+import { SearchIcon } from '../components/shared/Icons'
 import type { DraftRecord, ScriptRecord } from '../db/db'
 import { useDropdownMenu } from '../hooks/useDropdownMenu'
 import { useScriptsStore } from '../stores/scriptsStore'
+import {
+  LIB_GRID_GAP,
+  LIB_PAGE,
+  LIB_RADIUS_MENU,
+  LIB_SEARCH_INPUT,
+  LIB_SURFACE_RAISED,
+  LIB_TEXT_FAINT,
+  LIB_TEXT_MUTED,
+  LIB_TITLE,
+} from '../styles/libraryTokens'
 
 // Fusiona un borrador pendiente sobre su guion — se usa tanto para uno YA
 // guardado con una edición sin confirmar como para uno que TODAVÍA no se
@@ -133,9 +144,9 @@ export function FolderPage() {
   // se espera a que termine de cargar antes de decidir esto.
   if (!loading && !isSinCarpeta && !folder) {
     return (
-      <div className="p-8 text-sm text-gray-500">
+      <div className={`p-8 text-sm ${LIB_TEXT_MUTED}`}>
         Esta carpeta ya no existe.{' '}
-        <button type="button" onClick={() => navigate('/guiones')} className="text-blue-400 hover:underline">
+        <button type="button" onClick={() => navigate('/guiones')} className="text-white underline underline-offset-2 hover:no-underline">
           Volver a la biblioteca
         </button>
       </div>
@@ -145,9 +156,9 @@ export function FolderPage() {
   const title = isSinCarpeta ? 'Sin carpeta' : (folder?.name ?? '')
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-4 bg-[#0b0c10] px-4 py-4 text-gray-100">
-      <header className="flex items-center justify-between">
-        <button type="button" onClick={() => navigate('/guiones')} className="text-sm font-medium text-blue-400 hover:underline">
+    <div className={LIB_PAGE}>
+      <header className="mb-5 flex items-center justify-between">
+        <button type="button" onClick={() => navigate('/guiones')} className="text-sm font-medium text-white/90 hover:text-white">
           ‹ Biblioteca
         </button>
         {!isSinCarpeta && folder && (
@@ -156,7 +167,7 @@ export function FolderPage() {
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
               aria-label={`Más acciones para la carpeta ${folder.name}`}
-              className="rounded-md p-1.5 text-xl leading-none text-gray-400 hover:bg-white/5 hover:text-gray-200"
+              className={`rounded-full p-1.5 text-xl leading-none ${LIB_TEXT_MUTED} hover:bg-white/5 hover:text-white`}
             >
               ⋯
             </button>
@@ -165,7 +176,7 @@ export function FolderPage() {
                 <div
                   ref={menuRef}
                   style={{ position: 'fixed', top: position.top ?? undefined, bottom: position.bottom ?? undefined, left: position.left }}
-                  className="z-50 w-40 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
+                  className={`z-50 w-40 ${LIB_RADIUS_MENU} ${LIB_SURFACE_RAISED} py-1 shadow-xl`}
                 >
                   <button
                     type="button"
@@ -173,7 +184,7 @@ export function FolderPage() {
                       setMenuOpen(false)
                       setDialog({ type: 'renameFolder' })
                     }}
-                    className="block w-full px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5"
+                    className="block w-full px-3.5 py-2.5 text-left text-sm text-gray-200 hover:bg-white/5"
                   >
                     Renombrar
                   </button>
@@ -190,7 +201,7 @@ export function FolderPage() {
                       // a borrar de VERDAD, no cuánto se ve en pantalla.
                       setDialog({ type: 'deleteFolderChoice', count: displayScripts.length })
                     }}
-                    className="block w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5"
+                    className="block w-full px-3.5 py-2.5 text-left text-sm text-red-400 hover:bg-white/5"
                   >
                     Eliminar
                   </button>
@@ -201,25 +212,28 @@ export function FolderPage() {
         )}
       </header>
 
-      <h1 className="text-2xl font-semibold text-gray-100">{title}</h1>
+      <h1 className={LIB_TITLE}>{title}</h1>
 
-      <input
-        type="text"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder={`Buscar en ${title}...`}
-        className="w-full rounded-lg border border-white/10 bg-[#12151c] px-3 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 focus:border-blue-500 focus:outline-none"
-      />
+      <div className="relative mt-5 mb-5">
+        <SearchIcon className={`pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`Buscar en ${title}...`}
+          className={LIB_SEARCH_INPUT}
+        />
+      </div>
 
-      {loading && <p className="text-sm text-gray-500">Cargando...</p>}
+      {loading && <p className={`text-sm ${LIB_TEXT_MUTED}`}>Cargando...</p>}
 
       {!loading && visibleScripts.length === 0 && (
-        <p className="text-sm text-gray-500">
+        <p className={`text-sm ${LIB_TEXT_MUTED}`}>
           {term ? 'No se encontraron guiones con ese título.' : 'Esta carpeta todavía no tiene guiones.'}
         </p>
       )}
 
-      <div className="flex flex-col gap-3">
+      <div className={`flex flex-col ${LIB_GRID_GAP}`}>
         {visibleScripts.map(({ script, isDraft }) => (
           <ScriptCard
             key={script.id}

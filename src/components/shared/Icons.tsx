@@ -166,6 +166,15 @@ export function SettingsIcon({ className = DEFAULT_SIZE }: IconProps) {
   )
 }
 
+export function SearchIcon({ className = DEFAULT_SIZE }: IconProps) {
+  return (
+    <svg {...strokeProps} className={className} aria-hidden="true">
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" x2="16.65" y1="21" y2="16.65" />
+    </svg>
+  )
+}
+
 export function FolderPlusIcon({ className = DEFAULT_SIZE }: IconProps) {
   return (
     <svg {...strokeProps} className={className} aria-hidden="true">
