@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { FolderRecord, ScriptRecord } from '../../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../../engine/duration'
+import { extractTextPreview } from '../../engine/textPreview'
 import { useDropdownMenu } from '../../hooks/useDropdownMenu'
 
 interface ScriptCardProps {
@@ -13,12 +14,6 @@ interface ScriptCardProps {
   onDelete: () => void
   // folderId `null` = "Sin carpeta".
   onMoveToFolder: (folderId: number | null) => void
-}
-
-function extractPreview(html: string): string {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  const text = doc.body.textContent?.trim() ?? ''
-  return text.length > 140 ? `${text.slice(0, 140)}…` : text
 }
 
 export function ScriptCard({
@@ -53,7 +48,7 @@ export function ScriptCard({
 
   const wordCount = countWords(script.content)
   const duration = formatDuration(estimateDurationSeconds(wordCount, DEFAULT_WPM))
-  const preview = extractPreview(script.content) || 'Guion vacío'
+  const preview = extractTextPreview(script.content) || 'Guion vacío'
   const updated = new Date(script.updatedAt).toLocaleString('es', {
     dateStyle: 'medium',
     timeStyle: 'short',

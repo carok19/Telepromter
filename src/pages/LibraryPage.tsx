@@ -5,6 +5,7 @@ import { PromptDialog } from '../components/shared/PromptDialog'
 import { FolderTabs, type FolderFilter } from '../components/library/FolderTabs'
 import { ScriptCard } from '../components/library/ScriptCard'
 import type { FolderRecord } from '../db/db'
+import { extractTextPreview } from '../engine/textPreview'
 import { useScriptsStore } from '../stores/scriptsStore'
 
 type SortOption = 'recientes' | 'antiguos' | 'titulo'
@@ -62,6 +63,7 @@ export function LibraryPage() {
   const navigate = useNavigate()
   const scripts = useScriptsStore((s) => s.scripts)
   const folders = useScriptsStore((s) => s.folders)
+  const pendingDrafts = useScriptsStore((s) => s.pendingDrafts)
   const loading = useScriptsStore((s) => s.loading)
   const loadScripts = useScriptsStore((s) => s.loadScripts)
   const createScript = useScriptsStore((s) => s.createScript)
@@ -178,6 +180,43 @@ export function LibraryPage() {
           + Nuevo guion
         </button>
       </div>
+
+      {/* Guardado explícito: un guion (nuevo o ya guardado) con una edición
+          pendiente que nunca pasó por "Guardar" ni "Descartar" — p. ej. se
+          cerró la pestaña de golpe. Sin esto quedaría invisible para
+          siempre (no aparece en la lista de abajo, que solo muestra
+          guiones guardados), que para el usuario es lo mismo que perdido. */}
+      {pendingDrafts.length > 0 && (
+        <div className="mb-4 rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+          <p className="text-sm font-medium text-amber-300">
+            {pendingDrafts.length === 1
+              ? 'Tenés 1 borrador sin guardar:'
+              : `Tenés ${pendingDrafts.length} borradores sin guardar:`}
+          </p>
+          <div className="mt-2 flex flex-col gap-1">
+            {pendingDrafts.map(({ script: draftScript, draft }) => {
+              // Título vacío: con varios borradores sin título, "Sin
+              // título" repetido no ayudaría a distinguir cuál es cuál —
+              // se usa un fragmento del contenido en su lugar, igual que
+              // ScriptCard ya hace para sus tarjetas.
+              const label = draft.title || draftScript.title || extractTextPreview(draft.content, 60) || 'Sin título'
+              return (
+                <button
+                  key={draftScript.id}
+                  type="button"
+                  onClick={() => navigate(`/editor/${draftScript.id}`)}
+                  className="truncate text-left text-sm text-amber-200 hover:underline"
+                >
+                  {label}
+                  <span className="ml-2 text-xs text-amber-400/70">
+                    {new Date(draft.updatedAt).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' })}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       <FolderTabs
         folders={folders}

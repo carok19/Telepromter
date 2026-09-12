@@ -1,26 +1,61 @@
 import { create } from 'zustand'
-import { db, type FolderRecord, type ScriptRecord } from '../db/db'
+import { db, type DraftRecord, type FolderRecord, type ScriptRecord } from '../db/db'
+
+// Guardado explícito (tipo Word): un guion recién creado nace con
+// status:'draft' y NO aparece en `scripts` (la lista que ve Mis guiones)
+// hasta que se guarda de verdad. Mientras se edita, el autoguardado
+// escribe en la tabla `drafts` (ver DraftRecord en db.ts) — nunca en
+// `scripts.title/content` — así "Descartar cambios" siempre puede volver
+// exactamente a la última versión guardada sin perder nada, y un guion a
+// medio escribir nunca se ve en la biblioteca.
+export interface PendingDraft {
+  script: ScriptRecord
+  draft: DraftRecord
+}
 
 interface ScriptsState {
+  // Solo guiones GUARDADOS (status !== 'draft') — lo que ve Mis guiones y
+  // las carpetas. Un guion recién creado sin guardar todavía no aparece
+  // acá aunque ya tenga una fila real en Dexie.
   scripts: ScriptRecord[]
   // Carpetas: cargadas junto con `scripts` (ver loadScripts) porque Mis
   // guiones siempre necesita las dos listas juntas para filtrar/agrupar —
   // separarlas en otro store solo obligaría a coordinar dos cargas en vez
   // de una.
   folders: FolderRecord[]
+  // Guiones con cambios sin guardar recuperables: tanto un guion nuevo
+  // que nunca se guardó (status:'draft' con contenido tipeado) como uno
+  // ya guardado con una edición pendiente. Mis guiones los muestra aparte
+  // para que nunca queden invisibles/perdidos si se cerró la pestaña sin
+  // pasar por el aviso de salir.
+  pendingDrafts: PendingDraft[]
   loading: boolean
   // F8.6 (PWA): antes vivía como estado local de EditorPage (para mostrar
   // "Guardando.../Guardado" en su propio header) — se sube acá para que
   // usePwaUpdate.ts (que no está montado dentro de EditorPage) también
-  // pueda saber si hay un guardado en curso y NUNCA recargar la app en
+  // pueda saber si hay cambios sin guardar y NUNCA recargar la app en
   // medio de eso. Una sola fuente de verdad en vez de duplicar el estado.
+  // Con guardado explícito, 'saving' cubre TODA la ventana con cambios
+  // sin confirmar (no solo el debounce de 500ms del autoguardado interno).
   saveStatus: 'saved' | 'saving'
   setSaveStatus: (status: 'saved' | 'saving') => void
   loadScripts: () => Promise<void>
+  // status siempre 'draft' acá — es el único punto donde nace un guion
+  // genuinamente nuevo. No aparecerá en `scripts` hasta guardarlo.
   createScript: (title?: string, folderId?: number) => Promise<number>
-  updateScript: (id: number, patch: Partial<Pick<ScriptRecord, 'title' | 'content'>>) => Promise<void>
   removeScript: (id: number) => Promise<void>
   duplicateScript: (id: number) => Promise<number | undefined>
+  // Autoguardado en vivo: upsert en `drafts`, nunca toca `scripts`.
+  saveDraft: (scriptId: number, patch: { title: string; content: string }) => Promise<void>
+  // Guardado explícito de verdad: title/content pasan a `scripts`,
+  // status:'saved', y se borra la fila de `drafts` — ya no hay "cambios
+  // sin guardar" hasta la próxima edición.
+  commitSave: (scriptId: number, title: string, content: string) => Promise<void>
+  // "Descartar cambios": borra el borrador. Si el guion NUNCA se había
+  // guardado (status:'draft'), también borra el guion entero — no debe
+  // quedar nada en la biblioteca. Si ya estaba guardado, solo se pierde
+  // la edición pendiente; title/content guardados quedan intactos.
+  discardDraft: (scriptId: number) => Promise<void>
   // folderId `null` = mover a "Sin carpeta" (borra la clave del registro,
   // no la deja en `null` — ver el comentario de ScriptRecord.folderId).
   moveScriptToFolder: (id: number, folderId: number | null) => Promise<void>
@@ -37,17 +72,32 @@ interface ScriptsState {
 export const useScriptsStore = create<ScriptsState>((set, get) => ({
   scripts: [],
   folders: [],
+  pendingDrafts: [],
   loading: false,
   saveStatus: 'saved',
   setSaveStatus: (status) => set({ saveStatus: status }),
 
   loadScripts: async () => {
     set({ loading: true })
-    const [scripts, folders] = await Promise.all([
+    const [allScripts, folders, drafts] = await Promise.all([
       db.scripts.orderBy('updatedAt').reverse().toArray(),
       db.folders.orderBy('name').toArray(),
+      db.drafts.toArray(),
     ])
-    set({ scripts, folders, loading: false })
+    const scriptById = new Map(allScripts.map((s) => [s.id!, s]))
+    const pendingDrafts: PendingDraft[] = drafts
+      .map((draft) => {
+        const script = scriptById.get(draft.scriptId)
+        return script ? { script, draft } : null
+      })
+      .filter((d): d is PendingDraft => d !== null)
+      .sort((a, b) => b.draft.updatedAt - a.draft.updatedAt)
+    set({
+      scripts: allScripts.filter((s) => s.status !== 'draft'),
+      folders,
+      pendingDrafts,
+      loading: false,
+    })
   },
 
   // title='' (no 'Sin título'): el título vacío se muestra como
@@ -61,23 +111,22 @@ export const useScriptsStore = create<ScriptsState>((set, get) => ({
       content: '',
       createdAt: now,
       updatedAt: now,
+      status: 'draft',
       ...(folderId != null ? { folderId } : {}),
     })
     await get().loadScripts()
     return id
   },
 
-  updateScript: async (id, patch) => {
-    const updatedAt = Date.now()
-    await db.scripts.update(id, { ...patch, updatedAt })
-    set({
-      scripts: get().scripts.map((s) => (s.id === id ? { ...s, ...patch, updatedAt } : s)),
-    })
-  },
-
   removeScript: async (id) => {
-    await db.scripts.delete(id)
-    set({ scripts: get().scripts.filter((s) => s.id !== id) })
+    await db.transaction('rw', db.scripts, db.drafts, async () => {
+      await db.scripts.delete(id)
+      await db.drafts.delete(id)
+    })
+    set({
+      scripts: get().scripts.filter((s) => s.id !== id),
+      pendingDrafts: get().pendingDrafts.filter((d) => d.script.id !== id),
+    })
   },
 
   duplicateScript: async (id) => {
@@ -91,6 +140,10 @@ export const useScriptsStore = create<ScriptsState>((set, get) => ({
       content: original.content,
       createdAt: now,
       updatedAt: now,
+      // Duplicar un guion ya guardado produce otro guion ya guardado —
+      // aparece de inmediato en Mis guiones, sin pedir "Guardar" para
+      // algo que el usuario no tipeó de cero.
+      status: 'saved',
       // La copia queda en la MISMA carpeta que el original — "duplicar"
       // nunca debería sacar un guion de donde el usuario lo tenía
       // organizado.
@@ -98,6 +151,30 @@ export const useScriptsStore = create<ScriptsState>((set, get) => ({
     })
     await get().loadScripts()
     return newId
+  },
+
+  saveDraft: async (scriptId, patch) => {
+    await db.drafts.put({ scriptId, title: patch.title, content: patch.content, updatedAt: Date.now() })
+  },
+
+  commitSave: async (scriptId, title, content) => {
+    const updatedAt = Date.now()
+    await db.transaction('rw', db.scripts, db.drafts, async () => {
+      await db.scripts.update(scriptId, { title, content, status: 'saved', updatedAt })
+      await db.drafts.delete(scriptId)
+    })
+    await get().loadScripts()
+  },
+
+  discardDraft: async (scriptId) => {
+    const script = await db.scripts.get(scriptId)
+    await db.transaction('rw', db.scripts, db.drafts, async () => {
+      await db.drafts.delete(scriptId)
+      if (script && script.status === 'draft') {
+        await db.scripts.delete(scriptId)
+      }
+    })
+    await get().loadScripts()
   },
 
   moveScriptToFolder: async (id, folderId) => {
@@ -125,9 +202,11 @@ export const useScriptsStore = create<ScriptsState>((set, get) => ({
   },
 
   deleteFolder: async (id, mode) => {
-    await db.transaction('rw', db.scripts, db.folders, async () => {
+    await db.transaction('rw', db.scripts, db.folders, db.drafts, async () => {
       if (mode === 'delete') {
+        const idsToDelete = await db.scripts.where('folderId').equals(id).primaryKeys()
         await db.scripts.where('folderId').equals(id).delete()
+        await db.drafts.where('scriptId').anyOf(idsToDelete).delete()
       } else {
         await db.scripts.where('folderId').equals(id).modify({ folderId: undefined })
       }

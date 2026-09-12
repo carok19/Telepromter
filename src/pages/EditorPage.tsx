@@ -1,43 +1,60 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useBlocker, useNavigate, useParams } from 'react-router-dom'
 import { EditorCanvas, type EditorCanvasHandle } from '../components/editor/EditorCanvas'
 import { EditorToolbar } from '../components/editor/EditorToolbar'
+import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { db, type ScriptRecord } from '../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../engine/duration'
 import { useScriptsStore } from '../stores/scriptsStore'
 
 const AUTOSAVE_DELAY_MS = 500
 
+// Guardado explícito (tipo Word): title/content SOLO llegan a la tabla
+// `scripts` cuando el usuario aprieta "Guardar" (acá o en el aviso de
+// salir) — mientras se edita, el autoguardado sigue escribiendo cada
+// AUTOSAVE_DELAY_MS, pero en la tabla `drafts` (ver commitSave/saveDraft
+// en scriptsStore.ts), nunca en el guion real. Esto permite "Descartar
+// cambios" de verdad (volver exactamente a lo último guardado, sin haber
+// tocado esa versión en ningún momento) sin perder la protección contra
+// cerrar la app/quedarse sin batería a mitad de una edición: lo último
+// tipeado sigue vivo en `drafts` pase lo que pase.
 export function EditorPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const createScript = useScriptsStore((s) => s.createScript)
-  const updateScript = useScriptsStore((s) => s.updateScript)
-  const removeScript = useScriptsStore((s) => s.removeScript)
-  const saveStatus = useScriptsStore((s) => s.saveStatus)
+  const saveDraft = useScriptsStore((s) => s.saveDraft)
+  const commitSave = useScriptsStore((s) => s.commitSave)
+  const discardDraft = useScriptsStore((s) => s.discardDraft)
   const setSaveStatus = useScriptsStore((s) => s.setSaveStatus)
 
   const [script, setScript] = useState<ScriptRecord | null>(null)
   const [title, setTitle] = useState('')
   const [wordCount, setWordCount] = useState(0)
   const [wpm, setWpm] = useState(DEFAULT_WPM)
+  // "Hay cambios sin guardar" — arranca en true si al abrir el guion ya
+  // había un borrador recuperado (ver el efecto de carga más abajo), y en
+  // false para un guion recién creado (todavía no se escribió nada) o uno
+  // guardado tal cual estaba. Es estado de React (no solo un ref) porque
+  // maneja directamente el botón Guardar, el indicador visual y
+  // useBlocker — todos necesitan re-renderizar cuando cambia.
+  const [isDirty, setIsDirty] = useState(false)
 
   const canvasRef = useRef<EditorCanvasHandle>(null)
   const saveTimeoutRef = useRef<number | undefined>(undefined)
-  const pendingPatchRef = useRef<Partial<Pick<ScriptRecord, 'title' | 'content'>>>({})
   const scriptIdRef = useRef<number | null>(null)
   const hasCreatedRef = useRef(false)
-  // Guion vacío al salir (bug reportado: entrar a "Nuevo guion" y salir sin
-  // escribir nada deja basura en la biblioteca): espejan `title`/`wordCount`
-  // en refs para poder leer el valor MÁS RECIENTE en el cleanup de más
-  // abajo, cuyo closure (por sus deps [updateScript, setSaveStatus,
-  // removeScript], estables) quedaría con los valores de cuando se montó
-  // si se leyera el estado directamente. isEmpty exige AMBOS vacíos —
-  // nunca se borra un guion con título O contenido real.
+  // Espejan title/content/wordCount MÁS RECIENTES en refs (no solo el
+  // estado de React) para que handleSave/el autoguardado siempre lean el
+  // valor actual sin depender de en qué momento se re-renderizó el
+  // componente — mismo motivo que ya justificaba titleRef/wordCountRef
+  // antes de esta fase.
   const titleRef = useRef('')
+  const contentRef = useRef('')
   const wordCountRef = useRef(0)
 
-  // Si se entra a /editor sin id, crear un guion nuevo y redirigir a /editor/:id.
+  // Si se entra a /editor sin id, crear un guion nuevo (nace como
+  // 'draft' — ver createScript en scriptsStore.ts) y redirigir a
+  // /editor/:id.
   useEffect(() => {
     if (id || hasCreatedRef.current) return
     hasCreatedRef.current = true
@@ -46,99 +63,127 @@ export function EditorPage() {
     })
   }, [id, createScript, navigate])
 
-  // Cargar el guion existente por id.
+  // Cargar el guion existente por id — Y su borrador pendiente, si quedó
+  // alguno de una sesión anterior que se cerró sin pasar por "Guardar" ni
+  // "Descartar" (cerrar la pestaña de golpe, quedarse sin batería). Si
+  // hay un borrador, se carga ESE contenido en el editor (no el guardado)
+  // y se marca isDirty de entrada — el usuario lo ve tal como lo dejó, con
+  // el botón Guardar ya activo, listo para confirmarlo o descartarlo.
   useEffect(() => {
     if (!id) return
     const numericId = Number(id)
     let cancelled = false
     scriptIdRef.current = numericId
-    db.scripts.get(numericId).then((record) => {
+    Promise.all([db.scripts.get(numericId), db.drafts.get(numericId)]).then(([record, draft]) => {
       if (cancelled || !record) return
       setScript(record)
-      setTitle(record.title)
-      titleRef.current = record.title
-      const words = countWords(record.content)
+      const initialTitle = draft ? draft.title : record.title
+      const initialContent = draft ? draft.content : record.content
+      setTitle(initialTitle)
+      titleRef.current = initialTitle
+      contentRef.current = initialContent
+      const words = countWords(initialContent)
       setWordCount(words)
       wordCountRef.current = words
+      if (draft) {
+        setIsDirty(true)
+        setSaveStatus('saving')
+      }
     })
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, setSaveStatus])
 
-  // Volcar el contenido cargado en el lienzo DESPUÉS de que "script" pase a
-  // no-nulo y React haya montado EditorCanvas (solo entonces canvasRef.current
-  // existe). Hacerlo dentro del .then() de arriba era demasiado pronto: en
-  // ese instante el render seguía mostrando "Cargando guion..." y el ref aún
-  // era null, así que el contenido se perdía visualmente pese a estar bien
-  // guardado en IndexedDB.
+  // Volcar el contenido cargado (el del borrador recuperado, si había uno
+  // — ver el efecto de arriba — o si no el guardado tal cual) en el
+  // lienzo DESPUÉS de que "script" pase a no-nulo y React haya montado
+  // EditorCanvas (solo entonces canvasRef.current existe). Hacerlo dentro
+  // del .then() de arriba era demasiado pronto: en ese instante el render
+  // seguía mostrando "Cargando guion..." y el ref aún era null.
   useEffect(() => {
-    if (script) canvasRef.current?.setContent(script.content)
+    if (script) canvasRef.current?.setContent(contentRef.current)
   }, [script])
 
-  // Los cambios de título y de contenido comparten un único debounce, así que
-  // se acumulan (merge) en pendingPatchRef en vez de reemplazarse entre sí;
-  // de lo contrario, escribir el título y luego seguir tipeando contenido
-  // antes de que venza el debounce descartaría el título sin guardarlo.
-  const persist = useCallback(
-    (patch: Partial<Pick<ScriptRecord, 'title' | 'content'>>) => {
-      if (scriptIdRef.current == null) return
-      pendingPatchRef.current = { ...pendingPatchRef.current, ...patch }
-      setSaveStatus('saving')
-      window.clearTimeout(saveTimeoutRef.current)
-      saveTimeoutRef.current = window.setTimeout(async () => {
-        const toSave = pendingPatchRef.current
-        pendingPatchRef.current = {}
-        await updateScript(scriptIdRef.current!, toSave)
-        setSaveStatus('saved')
-      }, AUTOSAVE_DELAY_MS)
-    },
-    [updateScript, setSaveStatus],
-  )
+  const markDirty = useCallback(() => {
+    setIsDirty(true)
+    setSaveStatus('saving')
+  }, [setSaveStatus])
 
-  // Al desmontar (p. ej. al navegar a "Volver" antes de que venza el
-  // debounce): si el guion sigue completamente vacío (nunca se escribió
-  // título NI contenido), se descarta en vez de dejarlo como basura en la
-  // biblioteca — es el mismo guion que "Nuevo guion" (o entrar a /editor
-  // sin id) acaba de crear automáticamente; si nunca se tocó, no tiene
-  // sentido conservarlo. Si tiene CUALQUIER texto, nunca se borra: se
-  // vuelca de inmediato el cambio pendiente en vez de descartarlo, igual
-  // que antes. setSaveStatus acá es seguro aunque el componente ya se haya
-  // desmontado: vive en scriptsStore (Zustand), no en un useState local —
-  // esto deja a usePwaUpdate.ts (F8.6) ver que todavía hay un guardado en
-  // curso durante este volcado final.
-  useEffect(() => {
-    return () => {
-      window.clearTimeout(saveTimeoutRef.current)
-      const pending = pendingPatchRef.current
-      const id = scriptIdRef.current
-      if (id == null) return
-      const isEmpty = titleRef.current.trim() === '' && wordCountRef.current === 0
-      if (isEmpty) {
-        pendingPatchRef.current = {}
-        removeScript(id)
-        return
-      }
-      if (Object.keys(pending).length > 0) {
-        pendingPatchRef.current = {}
-        setSaveStatus('saving')
-        updateScript(id, pending).then(() => setSaveStatus('saved'))
-      }
-    }
-  }, [updateScript, setSaveStatus, removeScript])
+  // Autoguardado: escribe en `drafts` (nunca en el guion guardado). Un
+  // único debounce para título y contenido — cada tick manda el par
+  // completo leído de los refs (siempre al día), no un patch parcial: a
+  // diferencia del guardado directo de antes, acá no hace falta acumular
+  // cambios porque `saveDraft` reemplaza el borrador entero cada vez.
+  const persist = useCallback(() => {
+    if (scriptIdRef.current == null) return
+    window.clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = window.setTimeout(() => {
+      saveDraft(scriptIdRef.current!, { title: titleRef.current, content: contentRef.current })
+    }, AUTOSAVE_DELAY_MS)
+  }, [saveDraft])
 
   function handleTitleChange(value: string) {
     setTitle(value)
     titleRef.current = value
-    persist({ title: value })
+    markDirty()
+    persist()
   }
 
   function handleContentChange(html: string) {
+    contentRef.current = html
     const words = countWords(html)
     setWordCount(words)
     wordCountRef.current = words
-    persist({ content: html })
+    markDirty()
+    persist()
   }
+
+  const canSave = isDirty && (title.trim() !== '' || wordCount > 0)
+
+  const handleSave = useCallback(async () => {
+    if (scriptIdRef.current == null) return
+    if (titleRef.current.trim() === '' && wordCountRef.current === 0) return
+    window.clearTimeout(saveTimeoutRef.current)
+    await commitSave(scriptIdRef.current, titleRef.current, contentRef.current)
+    setIsDirty(false)
+    setSaveStatus('saved')
+  }, [commitSave, setSaveStatus])
+
+  const handleDiscard = useCallback(async () => {
+    if (scriptIdRef.current == null) return
+    window.clearTimeout(saveTimeoutRef.current)
+    await discardDraft(scriptIdRef.current)
+    setIsDirty(false)
+    setSaveStatus('saved')
+  }, [discardDraft, setSaveStatus])
+
+  // Intercepta CUALQUIER navegación dentro de la SPA (botón Volver, un
+  // link del sidebar, el gesto/botón atrás del navegador — useBlocker de
+  // React Router cubre los tres, porque el router maneja el historial
+  // completo) mientras haya cambios sin guardar. El diálogo (ver el JSX
+  // más abajo) decide entre Guardar/Descartar/Seguir editando.
+  const blocker = useBlocker(isDirty)
+
+  // Cerrar la pestaña o recargar: el navegador NO permite un diálogo
+  // propio acá por razones de seguridad (evita que un sitio spamee un
+  // "confirm" fingido) — se usa el mecanismo nativo `beforeunload`, que
+  // muestra el aviso genérico del navegador ("¿Salir del sitio? Los
+  // cambios no guardados se perderán"), no personalizable. Es la única
+  // excepción real a "nada de diálogos nativos" en la app: una
+  // restricción de la plataforma, no una decisión de diseño. El texto
+  // real que puedan mostrar los navegadores modernos ignora
+  // `returnValue`; se setea igual porque algunos navegadores viejos lo
+  // usan y no hace daño.
+  useEffect(() => {
+    if (!isDirty) return
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [isDirty])
 
   if (!script) {
     return <div className="p-8 text-sm text-gray-500">Cargando guion...</div>
@@ -158,7 +203,20 @@ export function EditorPage() {
           placeholder="Sin título"
           className="flex-1 bg-transparent text-lg font-medium text-gray-100 placeholder:text-gray-600 focus:outline-none"
         />
-        <span className="text-xs text-gray-500">{saveStatus === 'saving' ? 'Guardando…' : 'Guardado'}</span>
+        {isDirty && (
+          <span className="flex items-center gap-1.5 text-xs text-amber-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+            Cambios sin guardar
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={!canSave}
+          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Guardar
+        </button>
       </header>
 
       <EditorToolbar canvasRef={canvasRef} />
@@ -183,6 +241,33 @@ export function EditorPage() {
           />
         </label>
       </footer>
+
+      {blocker.state === 'blocked' && (
+        <ConfirmDialog
+          title="Cambios sin guardar"
+          message="¿Qué querés hacer con los cambios de este guion?"
+          actions={[
+            {
+              label: 'Guardar',
+              variant: 'primary',
+              onClick: async () => {
+                await handleSave()
+                blocker.proceed()
+              },
+            },
+            {
+              label: 'Descartar cambios',
+              variant: 'danger',
+              onClick: async () => {
+                await handleDiscard()
+                blocker.proceed()
+              },
+            },
+            { label: 'Seguir editando', variant: 'neutral', onClick: () => blocker.reset() },
+          ]}
+          onClose={() => blocker.reset()}
+        />
+      )}
     </div>
   )
 }

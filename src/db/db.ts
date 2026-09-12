@@ -3,6 +3,12 @@ import type { CalibrationSettings } from '../engine/calibrationEngine'
 
 export interface ScriptRecord {
   id?: number
+  // title/content acá son SIEMPRE la última versión GUARDADA de verdad
+  // (el usuario tocó "Guardar", o el diálogo de salida con cambios sin
+  // guardar). El autoguardado en vivo mientras se edita NUNCA escribe acá
+  // — ver DraftRecord más abajo — así "Descartar cambios" siempre puede
+  // volver exactamente a esto sin perder nada, y un guion nunca aparece a
+  // medio escribir en Mis guiones.
   title: string
   content: string
   createdAt: number
@@ -14,6 +20,25 @@ export interface ScriptRecord {
   // que no hace falta ninguna migración: se tratan igual que un guion
   // nuevo sin carpeta elegida.
   folderId?: number
+  // Guardado explícito (tipo Word): 'draft' = todavía nunca se guardó a
+  // propósito — no debe listarse en Mis guiones aunque ya exista la fila
+  // (se creó para tener un id/URL de inmediato al entrar al editor).
+  // Ausente (guiones de antes de esta fase) se trata como 'saved' en
+  // todos lados (chequeo `status !== 'draft'`, nunca `=== 'saved'`) — cero
+  // migración, todo lo que ya existía queda guardado como estaba.
+  status?: 'draft' | 'saved'
+}
+
+// El buffer autoguardado en vivo mientras se edita — separado de
+// ScriptRecord a propósito, para que "hay cambios sin guardar" sea tan
+// simple como "existe una fila acá" en vez de comparar campo por campo.
+// Se borra al guardar de verdad (Guardar, o "Guardar" en el aviso de
+// salir) o al descartar. Uno por guion como mucho — scriptId es la clave.
+export interface DraftRecord {
+  scriptId: number
+  title: string
+  content: string
+  updatedAt: number
 }
 
 // Una carpeta = solo nombre + timestamps. No lleva un color ni ningún otro
@@ -41,6 +66,7 @@ class RobressDatabase extends Dexie {
   scripts!: Table<ScriptRecord, number>
   profiles!: Table<CalibrationProfileRecord, number>
   folders!: Table<FolderRecord, number>
+  drafts!: Table<DraftRecord, number>
 
   constructor() {
     super('robress-teleprompter')
@@ -62,6 +88,19 @@ class RobressDatabase extends Dexie {
       scripts: '++id, updatedAt, createdAt, title, folderId',
       profiles: '++id, updatedAt, name',
       folders: '++id, updatedAt, name',
+    })
+    // v4: guardado explícito. Agrega `status` a `scripts` (índice, para
+    // poder filtrar rápido los guardados) y la tabla `drafts`. Sin
+    // `.upgrade()`, mismo criterio que v3: los guiones de antes de esta
+    // fase no traen `status`, se tratan como 'saved' en todos lados
+    // (nunca se compara `=== 'saved'`, siempre `!== 'draft'`) — quedan
+    // exactamente como estaban, ninguno pasa a ser un "borrador" por
+    // sorpresa.
+    this.version(4).stores({
+      scripts: '++id, updatedAt, createdAt, title, folderId, status',
+      profiles: '++id, updatedAt, name',
+      folders: '++id, updatedAt, name',
+      drafts: 'scriptId, updatedAt',
     })
   }
 }
