@@ -688,28 +688,38 @@ function TeleprompterSession({
           ? 'Reproduciendo'
           : 'Listo'
 
-  // liveSettings null ("Predeterminado", nunca tocado): no se aplica ningún
-  // estilo de calibración — el teleprompter se ve exactamente como antes de
-  // toda esta integración (mismas clases de siempre en el contenido). Con
-  // liveSettings (perfil elegido, o cualquier ajuste en vivo aunque no haya
-  // perfil): se reutilizan tal cual las funciones de calibrationEngine (la
-  // misma lógica ya validada en Glass Test), sin reimplementar nada del
-  // cálculo de mirror/color/filtro aquí.
-  const stageStyle = liveSettings ? buildCalibrationStyle(liveSettings) : undefined
-  const ghostStyle = liveSettings ? buildGhostLayerStyle(liveSettings) : null
-  const viewportBackground = liveSettings ? getEffectiveColors(liveSettings).background : undefined
+  // Corrección del bug "el panel miente": liveSettings null ("Predeterminado",
+  // nunca tocado) solía renderizarse con clases Tailwind fijas (text-3xl=30px,
+  // leading-relaxed=1.625, max-w-3xl=768px fijos) mientras el panel siempre
+  // mostraba los números de DEFAULT_CALIBRATION (56px/1.4/90%) — dos
+  // "valores por defecto" distintos que nunca se habían reconciliado. Tocar
+  // CUALQUIER slider materializaba liveSettings a partir de DEFAULT_CALIBRATION,
+  // y ahí el render saltaba de golpe de un default al otro (confirmado
+  // midiendo el fontSize computado: 30px → 60px en vez de 56px → 60px).
+  //
+  // effectiveSettings unifica los dos: "Predeterminado" ahora ES
+  // DEFAULT_CALIBRATION renderizado con buildCalibrationStyle, ni más ni
+  // menos — no hay una rama aparte con números propios. El panel (más abajo,
+  // via liveSettings ?? DEFAULT_CALIBRATION) y esta variable siempre
+  // coinciden, así que el primer movimiento del slider parte del mismo
+  // número que ya se estaba mostrando, sin salto.
+  const effectiveSettings = liveSettings ?? DEFAULT_CALIBRATION
+  const stageStyle = buildCalibrationStyle(effectiveSettings)
+  const ghostStyle = buildGhostLayerStyle(effectiveSettings)
+  const viewportBackground = getEffectiveColors(effectiveSettings).background
   // Mismo contenido SANEADO que el texto principal — si no, el ghost podría
   // seguir mostrando el tamaño contaminado de un guion pegado mientras el
   // texto real ya escala bien, una inconsistencia visual rara detrás del
   // vidrio.
   const ghostHtml = ghostStyle ? stripPauseMarkersForGhost(sanitizedContent) : null
-  // 'script' (default): no se agrega la clase ni la hoja de estilos — el
-  // contenido conserva la alineación que el editor le puso a cada bloque,
-  // exactamente como siempre. Cualquier otro valor SÍ fuerza la alineación
-  // en todo el contenido (ver getTextAlignOverrideCss en calibrationEngine.ts
-  // — un `text-align` en el wrapper no alcanza contra el estilo inline por
+  // 'script' (default, y el valor de DEFAULT_CALIBRATION.textAlign): no se
+  // agrega la clase ni la hoja de estilos — el contenido conserva la
+  // alineación que el editor le puso a cada bloque, exactamente como
+  // siempre. Cualquier otro valor SÍ fuerza la alineación en todo el
+  // contenido (ver getTextAlignOverrideCss en calibrationEngine.ts — un
+  // `text-align` en el wrapper no alcanza contra el estilo inline por
   // bloque que deja el editor).
-  const textAlignOverrideCss = liveSettings ? getTextAlignOverrideCss(liveSettings.textAlign) : null
+  const textAlignOverrideCss = getTextAlignOverrideCss(effectiveSettings.textAlign)
 
   return (
     // h-dvh (no h-screen): en celular, fuera de pantalla completa, la barra
@@ -781,39 +791,33 @@ function TeleprompterSession({
             cuando textAlign !== 'script', y solo afecta a los elementos con
             TEXT_ALIGN_OVERRIDE_CLASS (el wrapper del contenido, más abajo). */}
         {textAlignOverrideCss && <style>{textAlignOverrideCss}</style>}
-        {/* Este wrapper solo existe para aplicar mirror/offset/filtro/ancho
-            del perfil (buildCalibrationStyle) sin tocar el elemento que el
-            motor transforma. Sin liveSettings, stageStyle es `undefined` y
-            este div queda sin ningún estilo — cero diferencia visual con el
-            comportamiento de antes de esta integración. */}
+        {/* Este wrapper aplica mirror/offset/filtro/ancho/tamaño de
+            effectiveSettings (DEFAULT_CALIBRATION en "Predeterminado", o
+            liveSettings si hay perfil/ajuste en vivo) sin tocar el elemento
+            que el motor transforma — nunca queda sin estilo: eso era
+            justamente la causa del bug (ver el comentario de
+            effectiveSettings más arriba). */}
         <div style={stageStyle}>
           <div
             ref={contentRef}
-            // position: relative (siempre, con o sin liveSettings) para que
-            // los marcadores de pausa y la capa Ghost midan su posición
-            // contra ESTE elemento — el mismo que mueve el motor — y no
-            // terminen usando por accidente al nuevo wrapper de arriba como
-            // referencia de posicionamiento (offsetParent), lo que
-            // rompería el cálculo de checkpoints del motor. No cambia nada
-            // visible: no se fija ningún top/left.
-            // F8.5: [&_h2]:text-4xl (rama con liveSettings) usaba un rem
-            // FIJO (2.25rem) — un valor absoluto, ajeno al fontSize dinámico
-            // que buildCalibrationStyle pone inline en el wrapper de arriba.
-            // Con calibración activa, los títulos quedaban sordos a
-            // fontSize (probado: 28px o 120px de wrapper, el h2 seguía en
-            // 36px) mientras párrafos/divs sí heredaban bien, al no tener
-            // ninguna clase de tamaño propia. text-[1.3em] es RELATIVO: em
-            // en `font-size` es 1.3× el font-size COMPUTADO del padre, así
-            // que el título escala proporcional con cualquier ajuste (host
-            // o remoto) y de paso se mantiene siempre más grande que el
-            // cuerpo del texto. La rama "Predeterminado" (sin liveSettings)
-            // no tiene ningún fontSize dinámico que seguir — se deja
-            // exactamente como estaba, cero diferencia visual.
-            className={`${
-              liveSettings
-                ? 'py-16 will-change-transform [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-[1.3em] [&_h2]:font-semibold [&_p]:mb-4 [&_div]:mb-4'
-                : 'mx-auto max-w-3xl px-6 py-16 text-3xl leading-relaxed text-gray-100 will-change-transform [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-4xl [&_h2]:font-semibold [&_p]:mb-4 [&_div]:mb-4'
-            } ${liveSettings && liveSettings.textAlign !== 'script' ? TEXT_ALIGN_OVERRIDE_CLASS : ''}`}
+            // position: relative (siempre) para que los marcadores de pausa
+            // y la capa Ghost midan su posición contra ESTE elemento — el
+            // mismo que mueve el motor — y no terminen usando por accidente
+            // al wrapper de arriba como referencia de posicionamiento
+            // (offsetParent), lo que rompería el cálculo de checkpoints del
+            // motor. No cambia nada visible: no se fija ningún top/left.
+            // F8.5: text-[1.3em] es RELATIVO — em en `font-size` es 1.3× el
+            // font-size COMPUTADO del padre (el fontSize dinámico que
+            // buildCalibrationStyle pone inline en el wrapper de arriba),
+            // así que el título escala proporcional con cualquier ajuste
+            // (host o remoto) y de paso se mantiene siempre más grande que
+            // el cuerpo del texto. Ya no existe una rama "Predeterminado"
+            // con clases fijas (text-3xl/max-w-3xl/leading-relaxed): esa
+            // era precisamente la causa del desajuste entre lo que mostraba
+            // el panel y lo que se veía en pantalla.
+            className={`py-16 will-change-transform [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-[1.3em] [&_h2]:font-semibold [&_p]:mb-4 [&_div]:mb-4 ${
+              effectiveSettings.textAlign !== 'script' ? TEXT_ALIGN_OVERRIDE_CLASS : ''
+            }`}
             style={{ position: 'relative' }}
           >
             {/* El contenido real (el que cuenta para el alto desplazable)
