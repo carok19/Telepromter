@@ -12,6 +12,7 @@ import {
 import { LiveSettingsPanel } from '../components/teleprompter/LiveSettingsPanel'
 import { PairingModal } from '../components/remote/PairingModal'
 import { db, type ScriptRecord } from '../db/db'
+import { sanitizeContentHtml } from '../engine/contentSanitizer'
 import { countWords, DEFAULT_WPM, estimateDurationSeconds } from '../engine/duration'
 import { TeleprompterEngine } from '../engine/teleprompterEngine'
 import { useFullscreen } from '../hooks/useFullscreen'
@@ -88,6 +89,19 @@ function TeleprompterSession({ id }: { id: string }) {
   // manejador de comandos remotos de avanzar/retroceder para convertir
   // segundos a progreso normalizado con la misma fórmula que ya usa el motor.
   const wordCount = useMemo(() => (script ? countWords(script.content) : 0), [script])
+
+  // F8.5: guiones reales se pegan desde Word/ChatGPT/WhatsApp, no se
+  // escriben a mano — y ese pegado puede dejar `font-size` (u otro estilo)
+  // puesto INLINE por bloque, que le gana para siempre a cualquier
+  // calibración (perfil, panel en vivo, comando remoto). EditorCanvas ya
+  // sanea esto al pegar (para lo NUEVO), pero un guion pegado ANTES de ese
+  // arreglo sigue con el HTML contaminado guardado en Dexie tal cual — acá
+  // se sanea también al momento de RENDERIZAR, sin reescribir nada en la
+  // base: la próxima vez que se abra este guion se vuelve a sanear al
+  // vuelo, así que no hace falta ninguna migración ni pedirle al usuario
+  // que lo vuelva a pegar. Memoizado por el mismo motivo que wordCount:
+  // volver a parsear el HTML en cada tick de progreso sería desperdicio.
+  const sanitizedContent = useMemo(() => (script ? sanitizeContentHtml(script.content) : ''), [script])
 
   const viewportRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
@@ -546,7 +560,11 @@ function TeleprompterSession({ id }: { id: string }) {
   const stageStyle = liveSettings ? buildCalibrationStyle(liveSettings) : undefined
   const ghostStyle = liveSettings ? buildGhostLayerStyle(liveSettings) : null
   const viewportBackground = liveSettings ? getEffectiveColors(liveSettings).background : undefined
-  const ghostHtml = ghostStyle ? stripPauseMarkersForGhost(script.content) : null
+  // Mismo contenido SANEADO que el texto principal — si no, el ghost podría
+  // seguir mostrando el tamaño contaminado de un guion pegado mientras el
+  // texto real ya escala bien, una inconsistencia visual rara detrás del
+  // vidrio.
+  const ghostHtml = ghostStyle ? stripPauseMarkersForGhost(sanitizedContent) : null
   // 'script' (default): no se agrega la clase ni la hoja de estilos — el
   // contenido conserva la alineación que el editor le puso a cada bloque,
   // exactamente como siempre. Cualquier otro valor SÍ fuerza la alineación
@@ -640,9 +658,22 @@ function TeleprompterSession({ id }: { id: string }) {
             // referencia de posicionamiento (offsetParent), lo que
             // rompería el cálculo de checkpoints del motor. No cambia nada
             // visible: no se fija ningún top/left.
+            // F8.5: [&_h2]:text-4xl (rama con liveSettings) usaba un rem
+            // FIJO (2.25rem) — un valor absoluto, ajeno al fontSize dinámico
+            // que buildCalibrationStyle pone inline en el wrapper de arriba.
+            // Con calibración activa, los títulos quedaban sordos a
+            // fontSize (probado: 28px o 120px de wrapper, el h2 seguía en
+            // 36px) mientras párrafos/divs sí heredaban bien, al no tener
+            // ninguna clase de tamaño propia. text-[1.3em] es RELATIVO: em
+            // en `font-size` es 1.3× el font-size COMPUTADO del padre, así
+            // que el título escala proporcional con cualquier ajuste (host
+            // o remoto) y de paso se mantiene siempre más grande que el
+            // cuerpo del texto. La rama "Predeterminado" (sin liveSettings)
+            // no tiene ningún fontSize dinámico que seguir — se deja
+            // exactamente como estaba, cero diferencia visual.
             className={`${
               liveSettings
-                ? 'py-16 will-change-transform [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-4xl [&_h2]:font-semibold [&_p]:mb-4 [&_div]:mb-4'
+                ? 'py-16 will-change-transform [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-[1.3em] [&_h2]:font-semibold [&_p]:mb-4 [&_div]:mb-4'
                 : 'mx-auto max-w-3xl px-6 py-16 text-3xl leading-relaxed text-gray-100 will-change-transform [&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-4xl [&_h2]:font-semibold [&_p]:mb-4 [&_div]:mb-4'
             } ${liveSettings && liveSettings.textAlign !== 'script' ? TEXT_ALIGN_OVERRIDE_CLASS : ''}`}
             style={{ position: 'relative' }}
@@ -650,8 +681,11 @@ function TeleprompterSession({ id }: { id: string }) {
             {/* El contenido real (el que cuenta para el alto desplazable)
                 se renderiza una sola vez y nunca cambia mientras se
                 reproduce: el motor mueve `contentRef` con transform,
-                nunca a través de un re-render de React. */}
-            <div dangerouslySetInnerHTML={{ __html: script.content }} />
+                nunca a través de un re-render de React. sanitizedContent
+                (F8.5), no script.content directo: ver el comentario del
+                useMemo más arriba — nunca reescribe Dexie, solo lo que se
+                pinta. */}
+            <div dangerouslySetInnerHTML={{ __html: sanitizedContent }} />
             {ghostHtml && (
               <div aria-hidden="true" style={ghostStyle ?? undefined} dangerouslySetInnerHTML={{ __html: ghostHtml }} />
             )}

@@ -1,9 +1,11 @@
-import { forwardRef, useImperativeHandle, useRef, type MouseEvent } from 'react'
+import { forwardRef, useImperativeHandle, useRef, type ClipboardEvent, type MouseEvent } from 'react'
+import { sanitizeContentHtml } from '../../engine/contentSanitizer'
 import {
   AUTO_PAUSE_ATTR,
   PAUSE_MARKER_CLASS,
   buildNoteMarkerHtml,
   buildPauseMarkerHtml,
+  escapeHtml,
   getPauseMarkerClassName,
 } from '../../engine/markers'
 
@@ -84,6 +86,30 @@ export const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(fu
     },
   }))
 
+  // F8.5: guiones reales se pegan desde Word/ChatGPT/WhatsApp, no se
+  // escriben a mano — y el navegador, al pegar HTML, conserva estilos
+  // inline (`font-size`, a veces `font-family`/`color`) por cada bloque
+  // pegado. Sin este manejador, ese HTML rico entraba tal cual (el
+  // contentEditable no tenía ningún filtro propio) y esos estilos le
+  // ganaban para siempre a cualquier calibración posterior — el mismo
+  // problema que ya existía con `text-align` antes de sanearlo.
+  // sanitizeContentHtml (lista blanca: solo `text-align` sobrevive) es la
+  // MISMA función que usa TeleprompterPage para limpiar en el render los
+  // guiones pegados ANTES de este arreglo — un solo lugar con la regla.
+  //
+  // Si el origen no trae HTML (algunos celulares al copiar texto plano),
+  // se arma un HTML equivalente separando líneas con <br> — nunca se deja
+  // pasar `text/plain` tal cual porque perdería los saltos de línea.
+  function handlePaste(e: ClipboardEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const html = e.clipboardData.getData('text/html')
+    const plainText = e.clipboardData.getData('text/plain')
+    const raw = html || plainText.split(/\r\n|\r|\n/).map(escapeHtml).join('<br>')
+    const sanitized = sanitizeContentHtml(raw)
+    document.execCommand('insertHTML', false, sanitized)
+    emitChange()
+  }
+
   function handleClick(e: MouseEvent<HTMLDivElement>) {
     const target = (e.target as HTMLElement).closest(`.${PAUSE_MARKER_CLASS}`) as HTMLElement | null
     if (!target) return
@@ -116,6 +142,7 @@ export const EditorCanvas = forwardRef<EditorCanvasHandle, EditorCanvasProps>(fu
       suppressContentEditableWarning
       onInput={emitChange}
       onClick={handleClick}
+      onPaste={handlePaste}
       data-placeholder="Escribe tu guion aquí..."
       className="tp-editor-canvas min-h-[400px] max-w-3xl rounded-lg border border-white/10 bg-[#0f1117] p-6 text-base leading-relaxed text-gray-100 empty:before:text-gray-600 empty:before:content-[attr(data-placeholder)] focus:border-blue-500/50 focus:outline-none [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:text-xl [&_h2]:font-semibold [&_p]:mb-3 [&_div]:mb-3"
     />
