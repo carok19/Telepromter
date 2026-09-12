@@ -3,10 +3,26 @@
 // Envía comandos discretos al host y muestra el snapshot de reproducción
 // que el host publica — nunca mueve nada por sí mismo, nunca asume que un
 // comando llegó solo porque se tocó el botón.
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
+import { useEffect, useRef, useState, type ComponentType, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { useParams } from 'react-router-dom'
+import logo from '../assets/logo.svg'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
-import { Logo } from '../components/shared/Logo'
+import {
+  ArrowLeftRightIcon,
+  ArrowUpDownIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  FastForwardIcon,
+  FileTextIcon,
+  MinusIcon,
+  PauseIcon,
+  PlayIcon,
+  PlusIcon,
+  RewindIcon,
+  RotateCcwIcon,
+  WifiIcon,
+  WifiOffIcon,
+} from '../components/shared/Icons'
 import { CALIBRATION_RANGES, DEFAULT_CALIBRATION, type MirrorMode, type TextAlign } from '../engine/calibrationEngine'
 import { DEFAULT_WPM } from '../engine/duration'
 import {
@@ -235,9 +251,17 @@ function useDraggableProgress(
 
 const MIRROR_OPTIONS: Array<[MirrorMode, string]> = [
   ['none', 'Normal'],
-  ['horizontal', '↔'],
-  ['vertical', '↕'],
+  ['horizontal', 'Horizontal'],
+  ['vertical', 'Vertical'],
 ]
+
+// Espejo horizontal/vertical se muestra con un icono (antes eran los
+// símbolos ↔/↕ como texto) — 'none' ("Normal") no tiene icono, se queda con
+// la etiqueta de texto.
+const MIRROR_ICONS: Partial<Record<MirrorMode, ComponentType<{ className?: string }>>> = {
+  horizontal: ArrowLeftRightIcon,
+  vertical: ArrowUpDownIcon,
+}
 
 const TEXT_ALIGN_OPTIONS: Array<[TextAlign, string]> = [
   ['script', 'Guion'],
@@ -312,33 +336,35 @@ interface CalibrationStepperRowProps {
 
 function CalibrationStepperRow({ label, unit, disabled, stepper }: CalibrationStepperRowProps) {
   return (
-    <div className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 px-3 py-2">
-      <span className="w-20 text-left text-xs text-gray-400">{label}</span>
+    <div className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#0f1117] px-3 py-2">
+      <span className="flex-1 truncate text-left text-xs text-gray-400">{label}</span>
       <button
         type="button"
         disabled={disabled}
-        className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-lg text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label={`Disminuir ${label.toLowerCase()}`}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
         onPointerDown={stepper.decHold.onPointerDown}
         onPointerUp={() => stepper.release(stepper.decHold)}
         onPointerCancel={() => stepper.release(stepper.decHold)}
         onPointerLeave={() => stepper.release(stepper.decHold)}
       >
-        −
+        <MinusIcon className="h-4 w-4" />
       </button>
-      <span className="flex-1 text-center text-sm font-semibold text-gray-100">
+      <span className="w-16 shrink-0 text-center text-sm font-semibold tabular-nums text-gray-100">
         {stepper.shown}
         {unit}
       </span>
       <button
         type="button"
         disabled={disabled}
-        className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-lg text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label={`Aumentar ${label.toLowerCase()}`}
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
         onPointerDown={stepper.incHold.onPointerDown}
         onPointerUp={() => stepper.release(stepper.incHold)}
         onPointerCancel={() => stepper.release(stepper.incHold)}
         onPointerLeave={() => stepper.release(stepper.incHold)}
       >
-        +
+        <PlusIcon className="h-4 w-4" />
       </button>
     </div>
   )
@@ -382,6 +408,11 @@ export function RemoteControlPage() {
   const [scriptListOpen, setScriptListOpen] = useState(false)
   const [pendingScriptId, setPendingScriptId] = useState<number | null>(null)
   const [visibleNotice, setVisibleNotice] = useState<RemoteSession['notice']>(null)
+
+  // Rediseño visual: "Ajustes de pantalla" pasa a ser un panel plegable
+  // (arranca cerrado) en vez de estar siempre expandido — solo cambia si se
+  // ve o no, ninguno de los steppers/handlers de adentro se toca.
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     if (!sessionId || !configured) return
@@ -621,15 +652,54 @@ export function RemoteControlPage() {
     setPendingScriptId(null)
   }
 
+  // Rediseño visual: mismo texto/condición que antes (MESSAGES, online,
+  // errorDetail) — solo se extrae acá para poder mostrarlo tanto en la
+  // cabecera compacta como, si hiciera falta, en el panel de espera de más
+  // abajo, sin repetir la lógica dos veces.
+  const isReallyOnline = state === 'connected' && online
+  const statusLabel =
+    state === 'connected'
+      ? online
+        ? 'Conectado'
+        : 'Conectado (sin conexión)'
+      : state === 'error' && errorDetail
+        ? `${MESSAGES[state]} ${errorDetail}`
+        : MESSAGES[state]
+  const statusColorClass = isReallyOnline ? 'text-emerald-400' : state === 'connecting' ? 'text-gray-300' : 'text-amber-300'
+  const statusDotClass = isReallyOnline ? 'bg-emerald-400' : state === 'connecting' ? 'bg-gray-400' : 'bg-amber-400'
+
   return (
-    <div className="flex min-h-screen flex-col items-center gap-6 bg-[#0b0c10] p-6 text-center text-gray-100">
-      <div className="mt-4">
-        <Logo />
-      </div>
-      <h1 className="text-lg font-semibold text-gray-100">Control remoto</h1>
+    <div className="mx-auto flex min-h-screen w-full max-w-sm flex-col gap-3 bg-[#0b0c10] px-4 py-4 text-gray-100">
+      {/* 1. CABECERA — compacta, con el estado de conexión REAL (misma
+          lógica de siempre: state/online/errorDetail), nunca un valor
+          ficticio. El ícono de la derecha es puramente indicativo (refleja
+          `online`), no agrega ninguna acción nueva. */}
+      <header className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#12151c] px-3 py-2.5">
+        <div className="flex items-center gap-2.5">
+          <img src={logo} alt="" width={36} height={36} className="rounded-lg" />
+          <div className="flex flex-col">
+            <span className="text-sm font-semibold leading-tight text-gray-100">
+              Robress
+              <br />
+              Teleprompter
+            </span>
+            <span className={`mt-0.5 flex items-center gap-1.5 text-xs font-medium ${statusColorClass}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${statusDotClass}`} />
+              {statusLabel}
+            </span>
+          </div>
+        </div>
+        <span
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] ${
+            isReallyOnline ? 'text-emerald-400' : 'text-gray-500'
+          }`}
+        >
+          {isReallyOnline ? <WifiIcon className="h-4 w-4" /> : <WifiOffIcon className="h-4 w-4" />}
+        </span>
+      </header>
 
       {state === 'connected' && !online && (
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-300">
           Conexión perdida. Intentando reconectar…
         </p>
       )}
@@ -638,254 +708,326 @@ export function RemoteControlPage() {
           — se oculta solo tras NOTICE_DISPLAY_MS, nunca rompe la sesión ni
           bloquea nada más. */}
       {visibleNotice && (
-        <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-300">
           {visibleNotice.message}
         </p>
       )}
 
-      <p
-        className={`text-base font-medium ${
-          state === 'connected' && online
-            ? 'text-emerald-400'
-            : state === 'connecting'
-              ? 'text-gray-300'
-              : 'text-amber-300'
-        }`}
-      >
-        {state === 'connected'
-          ? online
-            ? 'Conectado ✓'
-            : 'Conectado (sin conexión)'
-          : state === 'error' && errorDetail
-            ? `${MESSAGES[state]} ${errorDetail}`
-            : MESSAGES[state]}
-      </p>
+      {state !== 'connected' && (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#12151c] px-6 py-16 text-center">
+          <span className={`text-sm font-medium ${statusColorClass}`}>{statusLabel}</span>
+        </div>
+      )}
 
       {state === 'connected' && (
-        <div className="flex w-full max-w-xs flex-col items-center gap-6">
-          {session?.scriptTitle && <p className="text-sm text-gray-400">{session.scriptTitle}</p>}
-
-          {/* B.2/B.3: elegir guion desde el remoto. El botón abre/cierra un
-              panel EN EL FLUJO NORMAL de la página (no un overlay) — al
-              abrirse empuja el resto de los controles hacia abajo en vez de
-              taparlos, y siguen alcanzables con scroll. */}
-          <button
-            type="button"
-            disabled={controlsDisabled || !scriptList}
-            onClick={() => setScriptListOpen((v) => !v)}
-            className="w-full rounded-lg border border-white/10 py-3 text-sm text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {scriptListOpen ? 'Cerrar lista ▲' : '📄 Elegir guion ▼'}
-          </button>
-
-          {scriptListOpen && scriptList && (
-            <div className="max-h-72 w-full overflow-y-auto rounded-lg border border-white/10 bg-[#0f1117] p-2 text-left">
-              {scriptList.every((folder) => folder.scripts.length === 0) ? (
-                <p className="p-3 text-center text-sm text-gray-500">No hay guiones guardados.</p>
+        <div className="flex flex-1 flex-col gap-3">
+          {/* 2. SELECCIÓN DE GUION */}
+          <section className="rounded-xl border border-white/10 bg-[#12151c] p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Guion actual</p>
+            <button
+              type="button"
+              disabled={controlsDisabled || !scriptList}
+              onClick={() => setScriptListOpen((v) => !v)}
+              className="flex w-full items-center gap-2.5 rounded-lg border border-white/10 bg-[#0f1117] px-3 py-2.5 text-left transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <FileTextIcon className="h-4 w-4 shrink-0 text-blue-400" />
+              <span className="flex-1 truncate text-sm text-gray-100">{session?.scriptTitle || 'Sin guion'}</span>
+              {scriptListOpen ? (
+                <ChevronUpIcon className="h-4 w-4 shrink-0 text-gray-400" />
               ) : (
-                scriptList.map(
-                  (folder) =>
-                    folder.scripts.length > 0 && (
-                      <div key={folder.id ?? 'sin-carpeta'} className="mb-3 last:mb-0">
-                        <p className="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                          {folder.name}
-                        </p>
-                        <div className="flex flex-col gap-1">
-                          {folder.scripts.map((s) => (
-                            <button
-                              key={s.id}
-                              type="button"
-                              disabled={controlsDisabled}
-                              onClick={() => requestLoadScript(s.id)}
-                              className={`rounded-md px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                                s.id === currentScriptId
-                                  ? 'bg-blue-600/20 font-semibold text-blue-400'
-                                  : 'text-gray-300 hover:bg-white/5'
-                              }`}
-                            >
-                              {s.id === currentScriptId ? '▶ ' : ''}
-                              {s.title}
-                            </button>
-                          ))}
+                <ChevronDownIcon className="h-4 w-4 shrink-0 text-gray-400" />
+              )}
+            </button>
+
+            {/* Se abre y se cierra EN EL FLUJO NORMAL del panel (no un
+                overlay): al abrirse empuja el resto de los controles hacia
+                abajo en vez de taparlos, y siguen alcanzables con scroll. */}
+            {scriptListOpen && scriptList && (
+              <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-white/10 bg-[#0f1117] p-2">
+                {scriptList.every((folder) => folder.scripts.length === 0) ? (
+                  <p className="p-3 text-center text-sm text-gray-500">No hay guiones guardados.</p>
+                ) : (
+                  scriptList.map(
+                    (folder) =>
+                      folder.scripts.length > 0 && (
+                        <div key={folder.id ?? 'sin-carpeta'} className="mb-3 last:mb-0">
+                          <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                            {folder.name}
+                          </p>
+                          <div className="flex flex-col gap-1">
+                            {folder.scripts.map((s) => (
+                              <button
+                                key={s.id}
+                                type="button"
+                                disabled={controlsDisabled}
+                                onClick={() => requestLoadScript(s.id)}
+                                className={`flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                                  s.id === currentScriptId
+                                    ? 'bg-blue-600/20 font-semibold text-blue-400'
+                                    : 'text-gray-300 hover:bg-white/5'
+                                }`}
+                              >
+                                <span
+                                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                    s.id === currentScriptId ? 'bg-blue-400' : 'bg-transparent'
+                                  }`}
+                                />
+                                <span className="truncate">{s.title}</span>
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ),
-                )
-              )}
-            </div>
-          )}
-
-          <p className="text-2xl font-semibold text-gray-100">{STATUS_LABELS[engineStatus] ?? engineStatus}</p>
-
-          <div className="w-full">
-            {/* Zona táctil alta (~44px, h-11) sobre una barra visual fina —
-                más fácil de agarrar con el dedo que la barra misma. Sin
-                transition-[width] mientras se arrastra: seguiría al dedo con
-                demora en vez de calcarlo exactamente. touch-none evita que
-                el navegador intercepte el gesto como scroll/zoom. */}
-            <div
-              ref={seekBarRef}
-              className="relative flex h-11 w-full touch-none items-center"
-              onPointerDown={controlsDisabled ? undefined : seekDrag.onPointerDown}
-              onPointerMove={controlsDisabled ? undefined : seekDrag.onPointerMove}
-              onPointerUp={seekDrag.onPointerUp}
-              onPointerCancel={seekDrag.onPointerCancel}
-              onLostPointerCapture={seekDrag.onLostPointerCapture}
-            >
-              <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
-                <div
-                  className={`h-full bg-blue-500 ${seekDrag.dragging ? '' : 'transition-[width]'}`}
-                  style={{ width: `${progressPct}%` }}
-                />
+                      ),
+                  )
+                )}
               </div>
-              {seekDrag.dragging && (
-                <div
-                  className="pointer-events-none absolute -top-9 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-xs font-semibold text-gray-100"
-                  style={{ left: `${progressPct}%` }}
-                >
-                  {progressPct}%
+            )}
+          </section>
+
+          {/* 3. ESTADO Y PROGRESO */}
+          <section className="rounded-xl border border-white/10 bg-[#12151c] p-4 text-center">
+            <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+              {session?.scriptTitle || '—'}
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-gray-100">{STATUS_LABELS[engineStatus] ?? engineStatus}</p>
+
+            <div className="mt-4">
+              {/* Zona táctil alta (~44px, h-11) sobre una barra visual fina —
+                  más fácil de agarrar con el dedo que la barra misma. Sin
+                  transition-[width] mientras se arrastra: seguiría al dedo
+                  con demora en vez de calcarlo exactamente. touch-none evita
+                  que el navegador intercepte el gesto como scroll/zoom. */}
+              <div
+                ref={seekBarRef}
+                className="relative flex h-11 w-full touch-none items-center"
+                onPointerDown={controlsDisabled ? undefined : seekDrag.onPointerDown}
+                onPointerMove={controlsDisabled ? undefined : seekDrag.onPointerMove}
+                onPointerUp={seekDrag.onPointerUp}
+                onPointerCancel={seekDrag.onPointerCancel}
+                onLostPointerCapture={seekDrag.onLostPointerCapture}
+              >
+                <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className={`h-full bg-blue-500 ${seekDrag.dragging ? '' : 'transition-[width]'}`}
+                    style={{ width: `${progressPct}%` }}
+                  />
                 </div>
-              )}
+                {seekDrag.dragging && (
+                  <div
+                    className="pointer-events-none absolute -top-9 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/80 px-2 py-1 text-xs font-semibold text-gray-100"
+                    style={{ left: `${progressPct}%` }}
+                  >
+                    {progressPct}%
+                  </div>
+                )}
+              </div>
+              <p className="mt-1 text-xs tabular-nums text-gray-500">{progressPct}%</p>
             </div>
-            <p className="mt-1 text-xs text-gray-500">{progressPct}%</p>
-          </div>
+          </section>
 
-          <div className="flex w-full items-center justify-center gap-3">
-            <button
-              type="button"
-              disabled={controlsDisabled}
-              className="flex h-14 w-14 items-center justify-center rounded-lg border border-white/10 text-xl text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-              {...seekBackHold}
-            >
-              ⏪
-            </button>
-            <button
-              type="button"
-              onClick={handlePlayPause}
-              disabled={controlsDisabled}
-              className="flex h-20 flex-1 items-center justify-center rounded-lg bg-blue-600 text-3xl font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {isPlaying ? '⏸' : '▶'}
-            </button>
-            <button
-              type="button"
-              disabled={controlsDisabled}
-              className="flex h-14 w-14 items-center justify-center rounded-lg border border-white/10 text-xl text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-              {...seekForwardHold}
-            >
-              ⏩
-            </button>
-          </div>
-
-          <div className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 px-3 py-2">
-            <button
-              type="button"
-              disabled={controlsDisabled}
-              className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 text-xl text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-              onPointerUp={() => handleSpeedButtonRelease(speedDownHold)}
-              onPointerCancel={() => handleSpeedButtonRelease(speedDownHold)}
-              onPointerLeave={() => handleSpeedButtonRelease(speedDownHold)}
-              onPointerDown={speedDownHold.onPointerDown}
-            >
-              −
-            </button>
-
-            {editingSpeed ? (
-              <input
-                type="number"
-                min={MIN_REMOTE_WPM}
-                max={MAX_REMOTE_WPM}
-                autoFocus
-                value={speedInputValue}
-                onChange={(e) => setSpeedInputValue(e.target.value)}
-                onBlur={commitSpeedEditor}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') e.currentTarget.blur()
-                }}
-                className="w-20 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-center text-lg text-gray-100"
-              />
-            ) : (
+          {/* 4. CONTROLES DE REPRODUCCIÓN — la zona más importante: Play/
+              Pausa domina, avanzar/retroceder quedan inmediatamente
+              disponibles a los lados. Mismos handlers/comandos de siempre
+              (seekBackHold/handlePlayPause/seekForwardHold), solo cambia el
+              ícono y el tamaño. */}
+          <section className="rounded-xl border border-white/10 bg-[#12151c] p-4">
+            <div className="flex items-center justify-center gap-4">
               <button
                 type="button"
                 disabled={controlsDisabled}
-                onClick={openSpeedEditor}
-                className="flex flex-col items-center disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Retroceder"
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                {...seekBackHold}
               >
-                <span className="text-lg font-semibold text-gray-100">{shownWpm} ppm</span>
-                <span className="text-[10px] text-gray-500">toca para escribir</span>
+                <RewindIcon className="h-5 w-5" />
               </button>
-            )}
+              <button
+                type="button"
+                onClick={handlePlayPause}
+                disabled={controlsDisabled}
+                aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+                className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-[0_0_0_6px_rgba(37,99,235,0.15)] transition-transform hover:bg-blue-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+              >
+                {isPlaying ? <PauseIcon className="h-8 w-8" /> : <PlayIcon className="ml-1 h-8 w-8" />}
+              </button>
+              <button
+                type="button"
+                disabled={controlsDisabled}
+                aria-label="Avanzar"
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                {...seekForwardHold}
+              >
+                <FastForwardIcon className="h-5 w-5" />
+              </button>
+            </div>
+          </section>
 
+          {/* 5. TEMPO */}
+          <section className="rounded-xl border border-white/10 bg-[#12151c] p-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Tempo</p>
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                disabled={controlsDisabled}
+                aria-label="Disminuir tempo"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                onPointerUp={() => handleSpeedButtonRelease(speedDownHold)}
+                onPointerCancel={() => handleSpeedButtonRelease(speedDownHold)}
+                onPointerLeave={() => handleSpeedButtonRelease(speedDownHold)}
+                onPointerDown={speedDownHold.onPointerDown}
+              >
+                <MinusIcon className="h-4 w-4" />
+              </button>
+
+              {editingSpeed ? (
+                <input
+                  type="number"
+                  min={MIN_REMOTE_WPM}
+                  max={MAX_REMOTE_WPM}
+                  autoFocus
+                  value={speedInputValue}
+                  onChange={(e) => setSpeedInputValue(e.target.value)}
+                  onBlur={commitSpeedEditor}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                  }}
+                  className="w-20 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-center text-lg text-gray-100"
+                />
+              ) : (
+                <button
+                  type="button"
+                  disabled={controlsDisabled}
+                  onClick={openSpeedEditor}
+                  className="flex flex-1 flex-col items-center disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span className="text-lg font-semibold tabular-nums text-gray-100">
+                    {shownWpm} <span className="text-xs font-normal text-gray-500">BPM</span>
+                  </span>
+                  <span className="text-[10px] text-gray-500">Toca para escribir</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                disabled={controlsDisabled}
+                aria-label="Aumentar tempo"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                onPointerUp={() => handleSpeedButtonRelease(speedUpHold)}
+                onPointerCancel={() => handleSpeedButtonRelease(speedUpHold)}
+                onPointerLeave={() => handleSpeedButtonRelease(speedUpHold)}
+                onPointerDown={speedUpHold.onPointerDown}
+              >
+                <PlusIcon className="h-4 w-4" />
+              </button>
+            </div>
+          </section>
+
+          {/* 6. AJUSTES DE PANTALLA — plegable: no ocupa toda la pantalla
+              permanentemente. F8.4 parte B: ajustes de calibración en vivo.
+              Los tres steppers usan el mismo patrón "optimista + revertir al
+              soltar" que el tempo; alineación y espejo son botones de un
+              solo toque (el host los confirma casi de inmediato, sin
+              throttle). Ninguno de esos handlers cambia acá, solo el
+              plegado/desplegado del panel que los contiene. */}
+          <section className="rounded-xl border border-white/10 bg-[#12151c] p-3">
             <button
               type="button"
-              disabled={controlsDisabled}
-              className="flex h-11 w-11 items-center justify-center rounded-md border border-white/10 text-xl text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-              onPointerUp={() => handleSpeedButtonRelease(speedUpHold)}
-              onPointerCancel={() => handleSpeedButtonRelease(speedUpHold)}
-              onPointerLeave={() => handleSpeedButtonRelease(speedUpHold)}
-              onPointerDown={speedUpHold.onPointerDown}
+              onClick={() => setSettingsOpen((v) => !v)}
+              className="flex w-full items-center justify-between gap-2 text-left"
             >
-              +
+              <span className="flex-1">
+                <span className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                  Ajustes de pantalla
+                </span>
+                {!settingsOpen && (
+                  <span className="mt-0.5 block text-xs text-gray-500">
+                    Tamaño de letra, margen, interlineado, alineación y espejo
+                  </span>
+                )}
+              </span>
+              {settingsOpen ? (
+                <ChevronUpIcon className="h-4 w-4 shrink-0 text-gray-400" />
+              ) : (
+                <ChevronDownIcon className="h-4 w-4 shrink-0 text-gray-400" />
+              )}
             </button>
-          </div>
 
-          {/* F8.4 parte B: ajustes de calibración en vivo. Los tres steppers
-              usan el mismo patrón "optimista + revertir al soltar" que la
-              velocidad; alineación y espejo son botones de un solo toque
-              (el host los confirma casi de inmediato, sin throttle). */}
-          <div className="flex w-full flex-col gap-2">
-            <CalibrationStepperRow label="Letra" unit="px" disabled={controlsDisabled} stepper={fontSizeStepper} />
-            <CalibrationStepperRow label="Margen" unit="%" disabled={controlsDisabled} stepper={marginStepper} />
-            <CalibrationStepperRow label="Interlineado" unit="×" disabled={controlsDisabled} stepper={lineHeightStepper} />
-          </div>
+            {settingsOpen && (
+              <div className="mt-3 flex flex-col gap-2">
+                <CalibrationStepperRow
+                  label="Tamaño de letra"
+                  unit=" px"
+                  disabled={controlsDisabled}
+                  stepper={fontSizeStepper}
+                />
+                <CalibrationStepperRow label="Margen" unit="%" disabled={controlsDisabled} stepper={marginStepper} />
+                <CalibrationStepperRow
+                  label="Interlineado"
+                  unit="×"
+                  disabled={controlsDisabled}
+                  stepper={lineHeightStepper}
+                />
 
-          <div className="flex w-full flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <span className="w-20 text-left text-xs text-gray-400">Alineación</span>
-              <div className="flex flex-1 gap-1 rounded-md border border-white/10 bg-[#0f1117] p-1">
-                {TEXT_ALIGN_OPTIONS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    disabled={controlsDisabled}
-                    onClick={() => sendCalibration('textAlign', value)}
-                    className={`flex-1 rounded px-1 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                      calibration?.textAlign === value ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+                <div>
+                  <p className="mb-1 text-xs text-gray-400">Alineación</p>
+                  <div className="flex gap-1 rounded-lg border border-white/10 bg-[#0f1117] p-1">
+                    {TEXT_ALIGN_OPTIONS.map(([value, label]) => (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled={controlsDisabled}
+                        onClick={() => sendCalibration('textAlign', value)}
+                        className={`flex-1 rounded px-1 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                          calibration?.textAlign === value
+                            ? 'bg-blue-600/20 text-blue-400'
+                            : 'text-gray-400 hover:text-gray-100'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-1 text-xs text-gray-400">Espejo</p>
+                  <div className="flex gap-1 rounded-lg border border-white/10 bg-[#0f1117] p-1">
+                    {MIRROR_OPTIONS.map(([value, label]) => {
+                      const MirrorIcon = MIRROR_ICONS[value]
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          disabled={controlsDisabled}
+                          aria-label={label}
+                          onClick={() => sendCalibration('mirror', value)}
+                          className={`flex flex-1 items-center justify-center rounded px-1 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                            calibration?.mirror === value
+                              ? 'bg-blue-600/20 text-blue-400'
+                              : 'text-gray-400 hover:text-gray-100'
+                          }`}
+                        >
+                          {MirrorIcon ? <MirrorIcon className="h-4 w-4" /> : label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
+          </section>
 
-            <div className="flex items-center justify-between gap-2">
-              <span className="w-20 text-left text-xs text-gray-400">Espejo</span>
-              <div className="flex flex-1 gap-1 rounded-md border border-white/10 bg-[#0f1117] p-1">
-                {MIRROR_OPTIONS.map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    disabled={controlsDisabled}
-                    onClick={() => sendCalibration('mirror', value)}
-                    className={`flex-1 rounded px-1 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-                      calibration?.mirror === value ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
+          {/* 7. REINICIAR — mismo handleReset de siempre, deliberadamente
+              menos protagonista que Play/Pausa (texto más chico, sin
+              relleno azul). */}
           <button
             type="button"
             onClick={handleReset}
             disabled={controlsDisabled}
-            className="w-full rounded-lg border border-white/10 py-4 text-lg text-gray-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#12151c] py-3 text-sm font-medium text-gray-400 transition-colors hover:bg-white/5 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            ↻ Reiniciar
+            <RotateCcwIcon className="h-4 w-4" />
+            Reiniciar
           </button>
         </div>
       )}
