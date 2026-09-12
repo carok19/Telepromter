@@ -847,29 +847,42 @@ function TeleprompterSession({
         }`}
         style={{ pointerEvents: controlsInteractive ? 'auto' : 'none' }}
       >
-        <header className="flex items-center gap-4 border-b border-white/10 bg-[#0b0c10]/90 px-6 py-3 backdrop-blur-sm">
-          <button type="button" onClick={handleBack} className="text-sm text-gray-400 hover:text-gray-100">
+        {/* Ancho angosto (360px): Volver/título/% siempre entran en la
+            primera fila (shrink-0 en los fijos, min-w-0+truncate en el
+            título). Los avisos de wake lock (texto largo, poco frecuente —
+            solo cuando falla o no está soportado) y "Pantalla completa"
+            van con basis-full: si no entran en la primera fila, flex-wrap
+            los manda a una segunda fila propia en vez de comprimir o
+            desbordar la primera. Es un overlay absoluto (ver el comentario
+            de arriba) — que crezca a dos filas no mueve nada del layout
+            real del viewport. */}
+        <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-white/10 bg-[#0b0c10]/90 px-4 py-3 backdrop-blur-sm sm:px-6">
+          <button type="button" onClick={handleBack} className="shrink-0 text-sm text-gray-400 hover:text-gray-100">
             ← Volver
           </button>
-          <h1 className="flex-1 truncate text-lg font-medium text-gray-100">{script.title || 'Sin título'}</h1>
-          {!wakeLockSupported && (
-            <span className="text-xs text-gray-500">La pantalla podría apagarse sola en este navegador.</span>
-          )}
-          {wakeLockSupported && wakeLockFailed && (
-            <span className="text-xs text-gray-500">
-              No se pudo mantener la pantalla encendida (¿ahorro de batería?).
-            </span>
-          )}
+          <h1 className="min-w-0 flex-1 truncate text-lg font-medium text-gray-100">{script.title || 'Sin título'}</h1>
+          <span className="shrink-0 text-xs text-gray-500">{Math.round(progress * 100)}%</span>
           {fsSupported && (
-            <button type="button" onClick={toggleFullscreen} className="text-xs text-gray-400 hover:text-gray-100">
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              className="shrink-0 whitespace-nowrap text-xs text-gray-400 hover:text-gray-100"
+            >
               {isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
             </button>
           )}
-          <span className="text-xs text-gray-500">{Math.round(progress * 100)}%</span>
+          {!wakeLockSupported && (
+            <span className="basis-full text-xs text-gray-500">La pantalla podría apagarse sola en este navegador.</span>
+          )}
+          {wakeLockSupported && wakeLockFailed && (
+            <span className="basis-full text-xs text-gray-500">
+              No se pudo mantener la pantalla encendida (¿ahorro de batería?).
+            </span>
+          )}
         </header>
 
         {pausedByMarker && (
-          <div className="border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-center text-sm text-amber-300">
+          <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-center text-sm text-amber-300 sm:px-6">
             ⏸ Pausado automáticamente en un marcador de pausa. Presiona Play para continuar.
           </div>
         )}
@@ -972,9 +985,15 @@ function TeleprompterSession({
         <footer
           onFocus={handleFooterFocus}
           onBlur={handleFooterBlur}
-          className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 bg-[#0b0c10]/90 px-6 py-3 backdrop-blur-sm"
+          className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 bg-[#0b0c10]/90 px-4 py-3 backdrop-blur-sm sm:px-6"
         >
-          <div className="flex items-center gap-2">
+          {/* flex-wrap acá TAMBIÉN (no solo en el <footer>): los 4 botones
+              son un solo hijo del footer desde el punto de vista del
+              flex-wrap de arriba — si ESTE grupo no envuelve sus propios
+              botones, el grupo entero se desborda igual (confirmado con
+              "Control remoto" cortado a 360px), aunque el footer que lo
+              contiene sí sepa envolver grupos completos. */}
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={togglePlay}
@@ -1011,11 +1030,11 @@ function TeleprompterSession({
                     ? 'Remoto conectado'
                     : 'Esperando remoto…'}
             </button>
-            {remoteError && <span className="text-xs text-red-400">{remoteError}</span>}
+            {remoteError && <span className="basis-full text-xs text-red-400">{remoteError}</span>}
           </div>
 
-          <label className="flex items-center gap-2 text-xs text-gray-500">
-            Velocidad (PPM)
+          <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
+            <span>Velocidad (PPM)</span>
             <input
               type="number"
               min={MIN_REMOTE_WPM}
@@ -1025,12 +1044,12 @@ function TeleprompterSession({
               onKeyDown={(e) => {
                 if (e.key === 'Enter') e.currentTarget.blur()
               }}
-              className="w-16 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
+              className="w-16 shrink-0 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
             />
           </label>
 
-          <label className="flex items-center gap-2 text-xs text-gray-500">
-            Perfil
+          <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
+            <span>Perfil</span>
             <select
               value={selectedProfileId ?? ''}
               onChange={(e) => {

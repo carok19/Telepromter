@@ -61,13 +61,20 @@ export function EditorToolbar({ canvasRef }: EditorToolbarProps) {
       isActive ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:bg-white/5 hover:text-gray-100'
     }`
 
+  // Ancho angosto (360px): 8 botones + 2 separadores nunca entran parejos
+  // en una sola fila, y flex-wrap los partía en dos filas DESPAREJAS (la
+  // cantidad que entra en la primera depende del ancho exacto, así que
+  // quedaba una fila larga y una cortita). En vez de eso: una sola fila
+  // que se desliza horizontal (overflow-x-auto + flex-nowrap), con cada
+  // botón/separador shrink-0 para que ninguno se achique — mismo patrón
+  // que un toolbar de editor de texto en celular (Google Docs, Notion).
   return (
-    <div className="flex flex-wrap items-center gap-1 border-b border-white/10 px-6 py-2">
+    <div className="flex flex-nowrap items-center gap-1 overflow-x-auto border-b border-white/10 px-4 py-2 sm:px-6">
       <button
         type="button"
         onMouseDown={preventFocusSteal}
         onClick={() => run('bold')}
-        className={buttonClass(active.bold)}
+        className={`shrink-0 ${buttonClass(active.bold)}`}
         title="Negrita"
       >
         <strong>B</strong>
@@ -76,7 +83,7 @@ export function EditorToolbar({ canvasRef }: EditorToolbarProps) {
         type="button"
         onMouseDown={preventFocusSteal}
         onClick={() => run('italic')}
-        className={buttonClass(active.italic)}
+        className={`shrink-0 ${buttonClass(active.italic)}`}
         title="Cursiva"
       >
         <em>I</em>
@@ -85,19 +92,19 @@ export function EditorToolbar({ canvasRef }: EditorToolbarProps) {
         type="button"
         onMouseDown={preventFocusSteal}
         onClick={toggleHeading}
-        className={buttonClass(active.heading)}
+        className={`shrink-0 whitespace-nowrap ${buttonClass(active.heading)}`}
         title="Título"
       >
         Título
       </button>
 
-      <span className="mx-1 h-5 w-px bg-white/10" />
+      <span className="mx-1 h-5 w-px shrink-0 bg-white/10" />
 
       <button
         type="button"
         onMouseDown={preventFocusSteal}
         onClick={() => run('justifyLeft')}
-        className={buttonClass(active.align === 'left')}
+        className={`shrink-0 whitespace-nowrap ${buttonClass(active.align === 'left')}`}
         title="Alinear a la izquierda"
       >
         Izq.
@@ -106,7 +113,7 @@ export function EditorToolbar({ canvasRef }: EditorToolbarProps) {
         type="button"
         onMouseDown={preventFocusSteal}
         onClick={() => run('justifyCenter')}
-        className={buttonClass(active.align === 'center')}
+        className={`shrink-0 whitespace-nowrap ${buttonClass(active.align === 'center')}`}
         title="Centrar"
       >
         Centro
@@ -115,19 +122,19 @@ export function EditorToolbar({ canvasRef }: EditorToolbarProps) {
         type="button"
         onMouseDown={preventFocusSteal}
         onClick={() => run('justifyRight')}
-        className={buttonClass(active.align === 'right')}
+        className={`shrink-0 whitespace-nowrap ${buttonClass(active.align === 'right')}`}
         title="Alinear a la derecha"
       >
         Der.
       </button>
 
-      <span className="mx-1 h-5 w-px bg-white/10" />
+      <span className="mx-1 h-5 w-px shrink-0 bg-white/10" />
 
       <button
         type="button"
         onMouseDown={preventFocusSteal}
         onClick={() => canvasRef.current?.insertPauseMarker()}
-        className="rounded px-3 py-1.5 text-sm font-medium text-amber-400 hover:bg-amber-500/10"
+        className="shrink-0 whitespace-nowrap rounded px-3 py-1.5 text-sm font-medium text-amber-400 hover:bg-amber-500/10"
         title="Insertar marcador de pausa"
       >
         Pausa
@@ -136,7 +143,7 @@ export function EditorToolbar({ canvasRef }: EditorToolbarProps) {
         type="button"
         onMouseDown={preventFocusSteal}
         onClick={() => canvasRef.current?.insertNoteMarker()}
-        className="rounded px-3 py-1.5 text-sm font-medium text-sky-400 hover:bg-sky-500/10"
+        className="shrink-0 whitespace-nowrap rounded px-3 py-1.5 text-sm font-medium text-sky-400 hover:bg-sky-500/10"
         title="Insertar nota / indicación de escena"
       >
         Nota

@@ -84,14 +84,18 @@ export function GlassTestPage() {
 
       <div className="flex flex-col border-t border-white/10 lg:h-screen lg:w-96 lg:shrink-0 lg:overflow-y-auto lg:border-l lg:border-t-0">
         <div className="flex items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
-          <button type="button" onClick={() => navigate('/guiones')} className="text-xs font-medium text-blue-400 hover:underline">
+          <button
+            type="button"
+            onClick={() => navigate('/guiones')}
+            className="shrink-0 text-xs font-medium whitespace-nowrap text-blue-400 hover:underline"
+          >
             ‹ Biblioteca
           </button>
-          <h1 className="flex-1 text-center text-sm font-semibold text-gray-100">Prueba de vidrio</h1>
+          <h1 className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-gray-100">Prueba de vidrio</h1>
           <button
             type="button"
             onClick={() => setPanelOpen((v) => !v)}
-            className="text-xs text-gray-400 hover:text-gray-100 lg:hidden"
+            className="shrink-0 text-xs whitespace-nowrap text-gray-400 hover:text-gray-100 lg:hidden"
           >
             {panelOpen ? 'Ocultar controles' : 'Mostrar controles'}
           </button>

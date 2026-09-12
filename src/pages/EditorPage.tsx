@@ -193,51 +193,65 @@ export function EditorPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-4 border-b border-white/10 px-6 py-3">
-        <button type="button" onClick={() => navigate('/guiones')} className="text-sm text-gray-400 hover:text-gray-100">
-          ← Volver
-        </button>
+      {/* Ancho angosto (360px): "← Volver" y "Guardar" van SIEMPRE en su
+          propia fila con shrink-0 (nunca se achican ni se cortan) y el
+          indicador de cambios sin guardar, en el medio, es lo único que
+          cede espacio (min-w-0 + truncate) — así nunca empuja a Guardar
+          fuera de la pantalla. El título va en una segunda fila completa,
+          con su propio min-w-0 (un <input> flex, a diferencia de un <span>,
+          no se achica solo — sin esto imponía un ancho mínimo propio que
+          por sí solo ya desbordaba el header). */}
+      <header className="flex flex-col gap-2 border-b border-white/10 px-4 py-3 sm:px-6">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => navigate('/guiones')}
+            className="shrink-0 text-sm text-gray-400 hover:text-gray-100"
+          >
+            ← Volver
+          </button>
+          {isDirty && (
+            <span className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-xs text-amber-400">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+              <span className="truncate">Cambios sin guardar</span>
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!canSave}
+            className="shrink-0 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Guardar
+          </button>
+        </div>
         <input
           value={title}
           onChange={(e) => handleTitleChange(e.target.value)}
           placeholder="Sin título"
-          className="flex-1 bg-transparent text-lg font-medium text-gray-100 placeholder:text-gray-600 focus:outline-none"
+          className="w-full min-w-0 bg-transparent text-lg font-medium text-gray-100 placeholder:text-gray-600 focus:outline-none"
         />
-        {isDirty && (
-          <span className="flex items-center gap-1.5 text-xs text-amber-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-            Cambios sin guardar
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={handleSave}
-          disabled={!canSave}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Guardar
-        </button>
       </header>
 
       <EditorToolbar canvasRef={canvasRef} />
 
-      <div className="flex-1 overflow-auto px-6 py-6">
+      <div className="flex-1 overflow-auto px-4 py-6 sm:px-6">
         <EditorCanvas ref={canvasRef} onChange={handleContentChange} />
       </div>
 
-      <footer className="flex items-center justify-between border-t border-white/10 px-6 py-3 text-xs text-gray-500">
+      <footer className="flex flex-col gap-2 border-t border-white/10 px-4 py-3 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <span>
           {wordCount} palabras · ~{durationLabel} min
         </span>
         <label className="flex items-center gap-2">
-          Velocidad de referencia (PPM)
+          <span>Velocidad de referencia (PPM)</span>
           <input
             type="number"
             min={60}
             max={220}
             value={wpm}
             onChange={(e) => setWpm(Number(e.target.value) || DEFAULT_WPM)}
-            className="w-16 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
+            className="w-16 shrink-0 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
           />
         </label>
       </footer>
