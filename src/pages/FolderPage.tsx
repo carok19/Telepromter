@@ -214,8 +214,8 @@ export function FolderPage() {
 
       <h1 className={LIB_TITLE}>{title}</h1>
 
-      <div className="relative mt-5 mb-5">
-        <SearchIcon className={`pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
+      <div className="relative mt-4 mb-5">
+        <SearchIcon className={`pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
         <input
           type="text"
           value={search}

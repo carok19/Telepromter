@@ -11,15 +11,18 @@ import logo from '../assets/logo.svg'
 import { FolderCard } from '../components/library/FolderCard'
 import { FabMenu } from '../components/shared/FabMenu'
 import { PromptDialog } from '../components/shared/PromptDialog'
-import { ChevronDownIcon, FileTextIcon, SearchIcon, SettingsIcon } from '../components/shared/Icons'
+import { FileTextIcon, SearchIcon, SettingsIcon } from '../components/shared/Icons'
 import { formatRelativeDate } from '../engine/relativeDate'
 import { useScriptsStore } from '../stores/scriptsStore'
 import {
+  LIB_CARD_BORDER,
   LIB_GRID_GAP,
   LIB_PAGE,
   LIB_RADIUS_CARD,
   LIB_SEARCH_INPUT,
-  LIB_SORT_SELECT,
+  LIB_SEGMENTED_OPTION_ACTIVE,
+  LIB_SEGMENTED_OPTION_INACTIVE,
+  LIB_SEGMENTED_TRACK,
   LIB_SURFACE,
   LIB_SURFACE_HOVER,
   LIB_TEXT_FAINT,
@@ -148,8 +151,8 @@ export function LibraryPage() {
 
       <h1 className={LIB_TITLE}>Guiones &amp; Carpetas</h1>
 
-      <div className="relative mt-5">
-        <SearchIcon className={`pointer-events-none absolute top-1/2 left-4 h-4 w-4 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
+      <div className="relative mt-4">
+        <SearchIcon className={`pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
         <input
           type="text"
           value={search}
@@ -159,22 +162,17 @@ export function LibraryPage() {
         />
       </div>
 
-      <div className="mt-2.5 mb-5 flex items-center justify-end gap-1.5">
-        <span className={`text-[13px] ${LIB_TEXT_FAINT}`}>Ordenar por</span>
-        <div className="relative">
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortOption)}
-            className={LIB_SORT_SELECT}
+      <div className={`mt-3 mb-5 ${LIB_SEGMENTED_TRACK}`}>
+        {SORT_OPTIONS.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setSort(value)}
+            className={sort === value ? LIB_SEGMENTED_OPTION_ACTIVE : LIB_SEGMENTED_OPTION_INACTIVE}
           >
-            {SORT_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value} className="bg-[#1e2128] text-white">
-                {label}
-              </option>
-            ))}
-          </select>
-          <ChevronDownIcon className={`pointer-events-none absolute top-1/2 right-0 h-3 w-3 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
-        </div>
+            {label}
+          </button>
+        ))}
       </div>
 
       {loading && <p className={`text-sm ${LIB_TEXT_MUTED}`}>Cargando...</p>}
@@ -213,7 +211,7 @@ export function LibraryPage() {
                 key={result.id}
                 type="button"
                 onClick={() => navigate(`/teleprompter/${result.id}`)}
-                className={`flex items-center gap-3 ${LIB_RADIUS_CARD} ${LIB_SURFACE} px-4 py-3 text-left transition-colors ${LIB_SURFACE_HOVER}`}
+                className={`flex items-center gap-3 ${LIB_RADIUS_CARD} ${LIB_SURFACE} ${LIB_CARD_BORDER} px-4 py-3 text-left transition-colors ${LIB_SURFACE_HOVER}`}
               >
                 <FileTextIcon className={`h-4 w-4 shrink-0 ${LIB_TEXT_MUTED}`} />
                 <span className="min-w-0 flex-1 truncate text-sm text-white">{result.title}</span>

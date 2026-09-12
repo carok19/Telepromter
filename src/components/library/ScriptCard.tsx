@@ -6,7 +6,7 @@ import { extractTextPreview } from '../../engine/textPreview'
 import { useDropdownMenu } from '../../hooks/useDropdownMenu'
 import { FileTextIcon } from '../shared/Icons'
 import {
-  LIB_CARD_PADDING,
+  LIB_CARD_BORDER,
   LIB_RADIUS_CARD,
   LIB_RADIUS_MENU,
   LIB_SURFACE,
@@ -78,7 +78,7 @@ export function ScriptCard({
     // 360px competía por espacio con el título.
     <div
       onClick={onOpenTeleprompter}
-      className={`group relative cursor-pointer ${LIB_RADIUS_CARD} ${LIB_SURFACE} ${LIB_CARD_PADDING} py-5 transition-colors ${LIB_SURFACE_HOVER}`}
+      className={`group relative cursor-pointer ${LIB_RADIUS_CARD} ${LIB_SURFACE} ${LIB_CARD_BORDER} p-3.5 transition-colors ${LIB_SURFACE_HOVER}`}
     >
       <div className="flex items-start justify-between gap-3">
         {/* min-w-0 es lo que permite que title/preview trunquen en vez de
