@@ -3,7 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- iOS no lee el manifest para el ícono de "Agregar a inicio" — busca
+         este link puntual. vite-plugin-pwa inyecta el <link rel="manifest">
+         y el registro del service worker solo al hacer build. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0c10" />
     <title>Robress Teleprompter</title>
   </head>
   <body>

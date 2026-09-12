@@ -13,12 +13,13 @@ export function EditorPage() {
   const navigate = useNavigate()
   const createScript = useScriptsStore((s) => s.createScript)
   const updateScript = useScriptsStore((s) => s.updateScript)
+  const saveStatus = useScriptsStore((s) => s.saveStatus)
+  const setSaveStatus = useScriptsStore((s) => s.setSaveStatus)
 
   const [script, setScript] = useState<ScriptRecord | null>(null)
   const [title, setTitle] = useState('')
   const [wordCount, setWordCount] = useState(0)
   const [wpm, setWpm] = useState(DEFAULT_WPM)
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'saving'>('saved')
 
   const canvasRef = useRef<EditorCanvasHandle>(null)
   const saveTimeoutRef = useRef<number | undefined>(undefined)
@@ -79,22 +80,26 @@ export function EditorPage() {
         setSaveStatus('saved')
       }, AUTOSAVE_DELAY_MS)
     },
-    [updateScript],
+    [updateScript, setSaveStatus],
   )
 
   // Al desmontar (p. ej. al navegar a "Volver" antes de que venza el
   // debounce), volcar inmediatamente cualquier cambio pendiente en vez de
-  // descartarlo.
+  // descartarlo. setSaveStatus acá es seguro aunque el componente ya se
+  // haya desmontado: vive en scriptsStore (Zustand), no en un useState
+  // local — a diferencia de antes, esto SÍ deja a usePwaUpdate.ts (F8.6)
+  // ver que todavía hay un guardado en curso durante este volcado final.
   useEffect(() => {
     return () => {
       window.clearTimeout(saveTimeoutRef.current)
       const pending = pendingPatchRef.current
       if (scriptIdRef.current != null && Object.keys(pending).length > 0) {
         pendingPatchRef.current = {}
-        updateScript(scriptIdRef.current, pending)
+        setSaveStatus('saving')
+        updateScript(scriptIdRef.current, pending).then(() => setSaveStatus('saved'))
       }
     }
-  }, [updateScript])
+  }, [updateScript, setSaveStatus])
 
   function handleTitleChange(value: string) {
     setTitle(value)

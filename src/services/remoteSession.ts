@@ -391,6 +391,38 @@ function releaseChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>
   client.removeChannel(entry.channel)
 }
 
+// F8.6 (PWA): antes de intentar CONECTAR (crear una sesión como host, o
+// unirse como remoto) — nunca para comandos ya en curso, eso no se toca —
+// se falla rápido y claro en vez de dejar un spinner colgado:
+// 1) si el navegador ya sabe que no hay red (`navigator.onLine === false`),
+//    ni se intenta la llamada;
+// 2) si la red está "arriba pero degradada" (no rechaza, tampoco responde),
+//    CONNECTION_TIMEOUT_MS pone un límite — sin esto, `await client.rpc()`
+//    podría quedarse esperando indefinidamente.
+const CONNECTION_TIMEOUT_MS = 9000
+const OFFLINE_ERROR = 'Sin conexión a internet. El control remoto necesita internet para emparejar los dispositivos.'
+const TIMEOUT_ERROR = 'No se pudo conectar (tiempo de espera agotado). Revisá tu conexión e intentá de nuevo.'
+
+function isOffline(): boolean {
+  return typeof navigator !== 'undefined' && navigator.onLine === false
+}
+
+function withConnectionTimeout<T>(promise: PromiseLike<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('TIMEOUT')), CONNECTION_TIMEOUT_MS)
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (err) => {
+        clearTimeout(timer)
+        reject(err)
+      },
+    )
+  })
+}
+
 // ---------------------------------------------------------------------
 // Sesión: creación, lectura, unión y cierre — todo vía RPC (nunca la
 // tabla directamente). host_token solo se guarda en memoria acá, nunca se
@@ -426,8 +458,16 @@ function rowToSession(row: SessionRow, remoteUidOverride?: string | null): Remot
 export async function createSession(scriptTitle: string): Promise<{ sessionId: string | null; error: string | null }> {
   const client = getSupabaseClient()
   if (!client) return { sessionId: null, error: 'El control remoto no está disponible en este momento.' }
+  if (isOffline()) return { sessionId: null, error: OFFLINE_ERROR }
 
-  const { data, error } = await client.rpc('create_remote_session', { p_title: scriptTitle })
+  let result: Awaited<ReturnType<typeof client.rpc>>
+  try {
+    result = await withConnectionTimeout(client.rpc('create_remote_session', { p_title: scriptTitle }))
+  } catch (err) {
+    if (err instanceof Error && err.message === 'TIMEOUT') return { sessionId: null, error: TIMEOUT_ERROR }
+    throw err
+  }
+  const { data, error } = result
   if (error) {
     console.error('[remote] create_remote_session falló:', error)
     return { sessionId: null, error: error.message }
@@ -579,9 +619,21 @@ export async function joinSessionAsRemote(sessionId: string): Promise<JoinSessio
   if (!client) {
     return { outcome: 'error', session: null, errorMessage: 'El control remoto no está disponible en este momento.' }
   }
+  if (isOffline()) {
+    return { outcome: 'error', session: null, errorMessage: OFFLINE_ERROR }
+  }
 
   const clientId = getRemoteClientId()
-  const { data, error } = await client.rpc('join_remote_session', { p_id: sessionId, p_client_id: clientId })
+  let result: Awaited<ReturnType<typeof client.rpc>>
+  try {
+    result = await withConnectionTimeout(client.rpc('join_remote_session', { p_id: sessionId, p_client_id: clientId }))
+  } catch (err) {
+    if (err instanceof Error && err.message === 'TIMEOUT') {
+      return { outcome: 'error', session: null, errorMessage: TIMEOUT_ERROR }
+    }
+    throw err
+  }
+  const { data, error } = result
   if (error) {
     console.error('[remote] join_remote_session falló:', error)
     return { outcome: 'error', session: null, errorMessage: error.message }

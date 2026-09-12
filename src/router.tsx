@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { Layout } from './components/shared/Layout'
+import { RootShell } from './components/shared/RootShell'
 import { HomePage } from './pages/HomePage'
 import { LibraryPage } from './pages/LibraryPage'
 import { EditorPage } from './pages/EditorPage'
@@ -12,40 +13,50 @@ import { RemoteControlPage } from './pages/RemoteControlPage'
 
 export const router = createBrowserRouter([
   {
-    path: '/',
-    element: <Layout />,
+    // F8.6 (PWA): capa raíz sin path propio, solo para montar
+    // <UpdateBanner /> (dentro de RootShell) por encima de las tres ramas
+    // de abajo (Layout, /remote y /teleprompter son hermanas entre sí) sin
+    // duplicarlo en cada una ni tocar Layout.tsx.
+    element: <RootShell />,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: 'guiones', element: <LibraryPage /> },
-      { path: 'editor', element: <EditorPage /> },
-      { path: 'editor/:id', element: <EditorPage /> },
-      { path: 'glass-test', element: <GlassTestPage /> },
-      // Alias: la navegación (Fase 0) ya enlazaba a esta ruta como "Prueba
-      // de vidrio" antes de que Glass Test existiera. Se mantiene apuntando
-      // a la misma página para no romper el enlace previo.
-      { path: 'prueba-de-vidrio', element: <GlassTestPage /> },
-      { path: 'configuracion', element: <SettingsPage /> },
-      { path: 'ayuda', element: <HelpPage /> },
-    ],
-  },
-  // Fuera de Layout a propósito: el modo remoto (F8) es una interfaz
-  // independiente, mobile-first y sin sidebar — no la vista con el menú
-  // lateral del resto de la app.
-  {
-    path: '/remote',
-    children: [
-      { index: true, element: <RemoteJoinPage /> },
-      { path: ':sessionId', element: <RemoteControlPage /> },
-    ],
-  },
-  // Fuera de Layout a propósito (fase "pantalla limpia"): detrás del vidrio
-  // no debe verse nada más que el texto — ni sidebar ni el resto del chrome
-  // de Layout.
-  {
-    path: '/teleprompter',
-    children: [
-      { index: true, element: <TeleprompterPage /> },
-      { path: ':id', element: <TeleprompterPage /> },
+      {
+        path: '/',
+        element: <Layout />,
+        children: [
+          { index: true, element: <HomePage /> },
+          { path: 'guiones', element: <LibraryPage /> },
+          { path: 'editor', element: <EditorPage /> },
+          { path: 'editor/:id', element: <EditorPage /> },
+          { path: 'glass-test', element: <GlassTestPage /> },
+          // Alias: la navegación (Fase 0) ya enlazaba a esta ruta como
+          // "Prueba de vidrio" antes de que Glass Test existiera. Se
+          // mantiene apuntando a la misma página para no romper el enlace
+          // previo.
+          { path: 'prueba-de-vidrio', element: <GlassTestPage /> },
+          { path: 'configuracion', element: <SettingsPage /> },
+          { path: 'ayuda', element: <HelpPage /> },
+        ],
+      },
+      // Fuera de Layout a propósito: el modo remoto (F8) es una interfaz
+      // independiente, mobile-first y sin sidebar — no la vista con el
+      // menú lateral del resto de la app.
+      {
+        path: '/remote',
+        children: [
+          { index: true, element: <RemoteJoinPage /> },
+          { path: ':sessionId', element: <RemoteControlPage /> },
+        ],
+      },
+      // Fuera de Layout a propósito (fase "pantalla limpia"): detrás del
+      // vidrio no debe verse nada más que el texto — ni sidebar ni el
+      // resto del chrome de Layout.
+      {
+        path: '/teleprompter',
+        children: [
+          { index: true, element: <TeleprompterPage /> },
+          { path: ':id', element: <TeleprompterPage /> },
+        ],
+      },
     ],
   },
 ])

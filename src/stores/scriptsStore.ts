@@ -4,6 +4,13 @@ import { db, type ScriptRecord } from '../db/db'
 interface ScriptsState {
   scripts: ScriptRecord[]
   loading: boolean
+  // F8.6 (PWA): antes vivía como estado local de EditorPage (para mostrar
+  // "Guardando.../Guardado" en su propio header) — se sube acá para que
+  // usePwaUpdate.ts (que no está montado dentro de EditorPage) también
+  // pueda saber si hay un guardado en curso y NUNCA recargar la app en
+  // medio de eso. Una sola fuente de verdad en vez de duplicar el estado.
+  saveStatus: 'saved' | 'saving'
+  setSaveStatus: (status: 'saved' | 'saving') => void
   loadScripts: () => Promise<void>
   createScript: (title?: string) => Promise<number>
   updateScript: (id: number, patch: Partial<Pick<ScriptRecord, 'title' | 'content'>>) => Promise<void>
@@ -14,6 +21,8 @@ interface ScriptsState {
 export const useScriptsStore = create<ScriptsState>((set, get) => ({
   scripts: [],
   loading: false,
+  saveStatus: 'saved',
+  setSaveStatus: (status) => set({ saveStatus: status }),
 
   loadScripts: async () => {
     set({ loading: true })

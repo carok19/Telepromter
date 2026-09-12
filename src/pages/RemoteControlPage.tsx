@@ -227,6 +227,7 @@ export function RemoteControlPage() {
   const subscribeConnectivity = useRemoteStore((s) => s.subscribeConnectivity)
   const sendCommand = useRemoteStore((s) => s.sendCommand)
   const sendCalibrationCommandAction = useRemoteStore((s) => s.sendCalibrationCommand)
+  const setActiveRemoteSession = useRemoteStore((s) => s.setActiveSession)
 
   const [state, setState] = useState<ConnectionState>(() => (configured ? 'connecting' : 'error'))
   const [session, setSession] = useState<RemoteSession | null>(null)
@@ -298,6 +299,15 @@ export function RemoteControlPage() {
       if (revertTimeoutRef.current != null) window.clearTimeout(revertTimeoutRef.current)
     }
   }, [])
+
+  // F8.6 (PWA): refleja esta sesión en remoteStore para que
+  // usePwaUpdate.ts (montado fuera de esta pantalla) sepa que este
+  // dispositivo está actuando de remoto y no recargue la app en medio de
+  // un emparejamiento.
+  useEffect(() => {
+    setActiveRemoteSession(sessionId ?? null, state === 'connected')
+    return () => setActiveRemoteSession(null, false)
+  }, [sessionId, state, setActiveRemoteSession])
 
   async function handlePlayPause() {
     if (!sessionId || sendingRef.current) return

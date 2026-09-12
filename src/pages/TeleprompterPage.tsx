@@ -143,6 +143,7 @@ function TeleprompterSession({ id }: { id: string }) {
   const publishRemotePlayback = useRemoteStore((s) => s.publishPlayback)
   const publishCalibration = useRemoteStore((s) => s.publishCalibration)
   const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
+  const setActiveRemoteSession = useRemoteStore((s) => s.setActiveSession)
   const [remoteSessionId, setRemoteSessionId] = useState<string | null>(null)
   const [remoteSession, setRemoteSession] = useState<RemoteSession | null>(null)
   const [showPairingModal, setShowPairingModal] = useState(false)
@@ -335,6 +336,15 @@ function TeleprompterSession({ id }: { id: string }) {
       if (remoteSessionId) endRemoteSession(remoteSessionId)
     }
   }, [remoteSessionId, endRemoteSession])
+
+  // F8.6 (PWA): refleja esta sesión en remoteStore para que
+  // usePwaUpdate.ts (montado fuera de esta pantalla) sepa que hay un
+  // control remoto activo y no recargue la app en medio de un
+  // emparejamiento.
+  useEffect(() => {
+    setActiveRemoteSession(remoteSessionId, remoteSession?.remoteConnected ?? false)
+    return () => setActiveRemoteSession(null, false)
+  }, [remoteSessionId, remoteSession?.remoteConnected, setActiveRemoteSession])
 
   async function handleRemoteControlClick() {
     if (remoteSessionId) {

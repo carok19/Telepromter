@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="vite-plugin-pwa/react" />
 
 // Variables de entorno del control remoto (F8), sobre Supabase. Ambas
 // opcionales: `src/services/supabase.ts` ya trae valores públicos por

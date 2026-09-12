@@ -58,10 +58,21 @@ interface RemoteState {
   // por si el remoto real recién se unió. Sin efecto si se llama más
   // seguido que cada 2s (throttle interno en remoteSession.ts).
   refreshRemoteUid: (sessionId: string) => void
+  // F8.6 (PWA): true mientras ESTE dispositivo tiene una sesión de control
+  // remoto activa — como host (TeleprompterPage) o como remoto
+  // (RemoteControlPage), nunca los dos a la vez en la misma pestaña.
+  // usePwaUpdate.ts lo lee para no recargar la app en medio de un
+  // emparejamiento: la recarga lo cortaría de cualquiera de los dos lados.
+  activeSessionId: string | null
+  activeSessionConnected: boolean
+  setActiveSession: (sessionId: string | null, connected: boolean) => void
 }
 
-export const useRemoteStore = create<RemoteState>(() => ({
+export const useRemoteStore = create<RemoteState>((set) => ({
   configured: isRemoteControlConfigured(),
+  activeSessionId: null,
+  activeSessionConnected: false,
+  setActiveSession: (sessionId, connected) => set({ activeSessionId: sessionId, activeSessionConnected: connected }),
 
   ensureAuth: async () => getRemoteClientId(),
 
