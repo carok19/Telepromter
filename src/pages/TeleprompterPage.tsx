@@ -1,4 +1,18 @@
 import { liveQuery } from 'dexie'
+import {
+  ArrowLeft,
+  ChevronRight,
+  Gamepad2,
+  Gauge,
+  Maximize2,
+  Minimize2,
+  Pause,
+  Play as PlayIcon,
+  Radio,
+  RotateCcw,
+  Scan,
+  Settings,
+} from 'lucide-react'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FocusEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
@@ -38,7 +52,7 @@ import {
 import { usePlayerStore } from '../stores/playerStore'
 import { useProfilesStore } from '../stores/profilesStore'
 import { useRemoteStore } from '../stores/remoteStore'
-import { ACCENT_BG, ACCENT_BG_HOVER, ACCENT_SOFT_BG, ACCENT_TEXT, FONT_DISPLAY, ON_ACCENT } from '../styles/tokens'
+import { ACCENT_BG, ACCENT_BG_HOVER, FONT_DISPLAY, ON_ACCENT } from '../styles/tokens'
 
 // Recuerda el último perfil elegido para el teleprompter entre sesiones. Es
 // una preferencia liviana de UI (un id), no datos del dominio — se guarda en
@@ -51,6 +65,27 @@ const LAST_PROFILE_STORAGE_KEY = 'robress:teleprompterProfileId'
 // sistema de siempre para que cambiar la fuente de la app nunca mueva un
 // solo píxel de lo que el usuario ya calibró detrás del vidrio.
 const LEGACY_SYSTEM_FONT = "system-ui, 'Segoe UI', Roboto, sans-serif"
+
+// Identidad visual de la CONSOLA del Teleprompter (F/Rediseño visual):
+// 'Archivo' (ver index.css) reemplaza a Fredoka/Inter SOLO en el chrome de
+// esta pantalla (header + control deck del footer) — nunca en el texto del
+// guion ni en Prueba de vidrio, que siguen fuera de esto (ver
+// LEGACY_SYSTEM_FONT arriba). Buscado a propósito: Fredoka es redondeada y
+// juguetona, pensada para el resto de la app (Biblioteca, Editor); acá se
+// pidió una sensación de consola de producción profesional, no de marca.
+const FONT_CONSOLE = 'font-console'
+
+// Superficie de un control de la consola (Reiniciar/Señal/Margen/Velocidad/
+// Configuración/Control remoto): un gris carbón apenas más claro que el
+// fondo casi negro de la pantalla, con borde extremadamente sutil — nunca
+// el mismo tono plano de una tarjeta de la app (ver SURFACE en tokens.ts),
+// que se vería como "dashboard genérico" en vez de hardware.
+const CONSOLE_SURFACE = 'border border-white/[0.08] bg-[#141519]'
+const CONSOLE_BUTTON = `flex items-center justify-center gap-1 rounded-xl ${CONSOLE_SURFACE} px-2.5 py-2.5 text-[13px] font-medium text-gray-200 transition-colors hover:bg-white/[0.06] active:bg-white/10`
+// Estado "prendido" (Señal/Margen activos): mismo ámbar de acento que Play,
+// pero como superficie tenue (15%) en vez de rellena — se nota que está
+// activo sin competir con la acción principal.
+const CONSOLE_BUTTON_ACTIVE = `flex items-center justify-center gap-1 rounded-xl border border-accent/40 bg-accent/15 px-2.5 py-2.5 text-[13px] font-medium text-accent transition-colors`
 
 // F8.3: cota máxima de cuánto se demora en publicar el progreso al backend
 // de control remoto mientras se reproduce (los cambios de estado discretos
@@ -967,33 +1002,67 @@ function TeleprompterSession({
             desbordar la primera. Es un overlay absoluto (ver el comentario
             de arriba) — que crezca a dos filas no mueve nada del layout
             real del viewport. */}
-        <header className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-white/10 bg-[#0b0c10]/90 px-4 py-3 backdrop-blur-sm sm:px-6">
-          <button type="button" onClick={handleBack} className="shrink-0 text-sm text-gray-400 hover:text-gray-100">
-            ← Volver
+        <header
+          className={`flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-white/[0.08] bg-[#101116]/95 px-4 py-2.5 backdrop-blur-sm sm:px-6 ${FONT_CONSOLE}`}
+        >
+          <button
+            type="button"
+            onClick={handleBack}
+            className="flex shrink-0 items-center gap-1.5 text-sm font-medium text-gray-400 transition-colors hover:text-gray-100"
+          >
+            <ArrowLeft className="h-4 w-4" strokeWidth={2.25} aria-hidden="true" />
+            Volver
           </button>
-          <h1 className={`min-w-0 flex-1 truncate text-lg font-medium text-gray-100 ${FONT_DISPLAY}`}>{script.title || 'Sin título'}</h1>
-          <span className="shrink-0 text-xs text-gray-500">{Math.round(progress * 100)}%</span>
+          <span className="h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
+          <h1 className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight text-gray-100">
+            {script.title || 'Sin título'}
+          </h1>
+          <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-xs font-semibold text-gray-400">
+            {Math.round(progress * 100)}%
+          </span>
+          <span data-testid="playback-status-label" className="shrink-0 text-xs font-medium text-gray-500">
+            {statusLabel}
+          </span>
           {fsSupported && (
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              className="shrink-0 whitespace-nowrap text-xs text-gray-400 hover:text-gray-100"
-            >
-              {isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
-            </button>
+            <>
+              <span className="h-4 w-px shrink-0 bg-white/10" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                aria-label={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                title={isFullscreen ? 'Salir de pantalla completa' : 'Pantalla completa'}
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-gray-100"
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-4 w-4" aria-hidden="true" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" aria-hidden="true" />
+                )}
+              </button>
+            </>
           )}
           {!wakeLockSupported && (
-            <span className="basis-full text-xs text-gray-500">La pantalla podría apagarse sola en este navegador.</span>
+            <span className="basis-full text-xs font-normal text-gray-500">
+              La pantalla podría apagarse sola en este navegador.
+            </span>
           )}
           {wakeLockSupported && wakeLockFailed && (
-            <span className="basis-full text-xs text-gray-500">
+            <span className="basis-full text-xs font-normal text-gray-500">
               No se pudo mantener la pantalla encendida (¿ahorro de batería?).
             </span>
           )}
         </header>
 
+        {/* Riel de progreso: mismo dato que el "0%" del header, pero como
+            franja fina de consola — un detalle de instrumento profesional
+            que la barra ancha dentro del footer (más abajo, junto al
+            estado) no transmitía. */}
+        <div className="h-[3px] w-full bg-white/[0.05]">
+          <div className="h-full bg-accent transition-[width] duration-150" style={{ width: `${Math.round(progress * 100)}%` }} />
+        </div>
+
         {pausedByMarker && (
-          <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-center text-sm text-amber-300 sm:px-6">
+          <div className={`border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-center text-sm text-amber-300 sm:px-6 ${FONT_CONSOLE}`}>
             ⏸ Pausado automáticamente en un marcador de pausa. Presiona Play para continuar.
           </div>
         )}
@@ -1107,7 +1176,7 @@ function TeleprompterSession({
         <footer
           onFocus={handleFooterFocus}
           onBlur={handleFooterBlur}
-          className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 bg-[#0b0c10]/90 px-4 py-3 backdrop-blur-sm sm:px-6"
+          className={`flex flex-col gap-2.5 border-t border-white/[0.08] bg-[#0b0c10]/95 px-4 py-3 backdrop-blur-sm sm:px-6 ${FONT_CONSOLE}`}
         >
           {/* flex-wrap acá TAMBIÉN (no solo en el <footer>): los botones
               son un solo hijo del footer desde el punto de vista del
@@ -1115,19 +1184,21 @@ function TeleprompterSession({
               botones, el grupo entero se desborda igual (confirmado con
               "Control remoto" cortado a 360px), aunque el footer que lo
               contiene sí sepa envolver grupos completos. */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1">
             <button
               type="button"
               onClick={togglePlay}
-              className={`${FONT_DISPLAY} rounded-md ${ACCENT_BG} px-4 py-2 text-sm font-medium ${ON_ACCENT} ${ACCENT_BG_HOVER}`}
+              className="flex items-center justify-center gap-1 rounded-xl bg-accent px-3.5 py-2.5 text-[13px] font-semibold text-onaccent transition-colors hover:bg-accent-hover active:bg-accent-pressed"
             >
+              {status === 'playing' ? (
+                <Pause className="h-4 w-4" fill="currentColor" aria-hidden="true" />
+              ) : (
+                <PlayIcon className="h-4 w-4" fill="currentColor" aria-hidden="true" />
+              )}
               {playLabel}
             </button>
-            <button
-              type="button"
-              onClick={resetPlayback}
-              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
-            >
+            <button type="button" onClick={resetPlayback} className={CONSOLE_BUTTON}>
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
               Reiniciar
             </button>
             {/* Acceso de un toque al indicador de Señal: no entra a ningún
@@ -1139,12 +1210,9 @@ function TeleprompterSession({
               type="button"
               onClick={toggleSignalEnabled}
               aria-pressed={effectiveSettings.readingZone.enabled}
-              className={`rounded-md px-3 py-2 text-sm transition-colors ${
-                effectiveSettings.readingZone.enabled
-                  ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}`
-                  : 'border border-white/10 text-gray-300 hover:bg-white/5'
-              }`}
+              className={effectiveSettings.readingZone.enabled ? CONSOLE_BUTTON_ACTIVE : CONSOLE_BUTTON}
             >
+              <Radio className="h-4 w-4" aria-hidden="true" />
               Señal
             </button>
             {/* Mismo criterio que "Señal": prende/apaga las barras de
@@ -1154,66 +1222,78 @@ function TeleprompterSession({
               type="button"
               onClick={toggleMarginsGuides}
               aria-pressed={marginsGuidesVisible}
-              className={`rounded-md px-3 py-2 text-sm transition-colors ${
-                marginsGuidesVisible
-                  ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}`
-                  : 'border border-white/10 text-gray-300 hover:bg-white/5'
-              }`}
+              className={marginsGuidesVisible ? CONSOLE_BUTTON_ACTIVE : CONSOLE_BUTTON}
             >
+              <Scan className="h-4 w-4" aria-hidden="true" />
               Margen
             </button>
-            {/* Engranaje: abre la hoja de Configuración rápida (ver
-                SettingsSheet) con el resto de los ajustes — reemplaza a
-                la pestaña fija que antes vivía en el borde derecho. Un
-                botón más del footer: se oculta y protege contra el
-                toque fantasma exactamente igual que sus vecinos. */}
+          </div>
+
+          {/* "Instrumento" de velocidad: valor grande y slider de ancho
+              completo en vez del <input type="number"> chico de antes —
+              mismo setSpeed/clampeo de siempre (MIN_REMOTE_WPM/
+              MAX_REMOTE_WPM ya se aplican en el store), solo cambia el
+              control con el que se toca. */}
+          <div className={`${CONSOLE_SURFACE} rounded-xl px-4 py-3`}>
+            <div className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-gray-400 uppercase">
+                <Gauge className="h-4 w-4" aria-hidden="true" />
+                Velocidad (PPM)
+              </span>
+              <span className="flex items-baseline gap-1">
+                <span className="text-xl leading-none font-bold text-white">{wpm}</span>
+                <span className="text-[11px] font-medium text-gray-500">PPM</span>
+              </span>
+            </div>
+            <input
+              type="range"
+              min={MIN_REMOTE_WPM}
+              max={MAX_REMOTE_WPM}
+              value={wpm}
+              onChange={(e) => setSpeed(Number(e.target.value) || DEFAULT_WPM)}
+              aria-label="Velocidad (PPM)"
+              className="mt-3 w-full accent-accent"
+            />
+          </div>
+
+          {/* Engranaje -> fila "Configuración": abre la hoja de
+              Configuración rápida (ver SettingsSheet) con el resto de los
+              ajustes — mismo onClick/estado que antes, solo cambia de un
+              botón cuadrado con ⚙ a esta fila con ícono + etiqueta +
+              flecha. */}
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={() => setSettingsPanelOpen((v) => !v)}
               aria-label="Ajustes"
               aria-expanded={settingsPanelOpen}
-              className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-gray-300 hover:bg-white/5"
+              className={`${CONSOLE_SURFACE} flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-200 transition-colors hover:bg-white/[0.06]`}
             >
-              ⚙
+              <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate text-left">Configuración</span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
             </button>
             <button
               type="button"
               onClick={() => onRemoteControlClick(script.title || 'Sin título')}
               disabled={!remoteConfigured}
               title={!remoteConfigured ? 'Control remoto no disponible en este momento.' : undefined}
-              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+              className={`${CONSOLE_SURFACE} flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-200 transition-colors hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-40`}
             >
-              {!remoteSessionId
-                ? 'Control remoto'
-                : remoteSession?.status === 'ended'
-                  ? 'Sesión cerrada'
-                  : remoteSession?.remoteConnected
-                    ? 'Remoto conectado'
-                    : 'Esperando remoto…'}
+              <Gamepad2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate text-left">
+                {!remoteSessionId
+                  ? 'Control remoto'
+                  : remoteSession?.status === 'ended'
+                    ? 'Sesión cerrada'
+                    : remoteSession?.remoteConnected
+                      ? 'Remoto conectado'
+                      : 'Esperando remoto…'}
+              </span>
+              <ChevronRight className="h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
             </button>
-            {remoteError && <span className="basis-full text-xs text-red-400">{remoteError}</span>}
           </div>
-
-          <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
-            <span>Velocidad (PPM)</span>
-            <input
-              type="number"
-              min={MIN_REMOTE_WPM}
-              max={MAX_REMOTE_WPM}
-              value={wpm}
-              onChange={(e) => setSpeed(Number(e.target.value) || DEFAULT_WPM)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur()
-              }}
-              className="w-16 shrink-0 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
-            />
-          </label>
-
-          <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
-            <div className={`h-full ${ACCENT_BG}`} style={{ width: `${Math.round(progress * 100)}%` }} />
-          </div>
-
-          <span className="text-xs text-gray-500">{statusLabel}</span>
+          {remoteError && <span className="text-xs text-red-400">{remoteError}</span>}
         </footer>
       </div>
     </div>
