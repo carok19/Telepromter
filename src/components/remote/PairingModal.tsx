@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import QRCode from 'react-qr-code'
 import type { RemoteSession } from '../../services/remoteSession'
+import { ACCENT_SURFACE, FONT_DISPLAY, SURFACE_RAISED } from '../../styles/tokens'
 
 interface PairingModalProps {
   sessionId: string
@@ -45,8 +46,8 @@ export function PairingModal({ sessionId, session, joinUrl, onClose }: PairingMo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="w-full max-w-sm rounded-lg border border-white/10 bg-[#0f1117] p-6 text-center">
-        <h2 className="text-lg font-semibold text-gray-100">Control remoto</h2>
+      <div className={`w-full max-w-sm rounded-lg border border-white/10 ${SURFACE_RAISED} p-6 text-center`}>
+        <h2 className={`text-lg font-semibold text-gray-100 ${FONT_DISPLAY}`}>Control remoto</h2>
         <p className="mt-2 text-sm text-gray-400">
           Escaneá este código QR desde otro celular para controlar este Teleprompter.
         </p>
@@ -70,11 +71,7 @@ export function PairingModal({ sessionId, session, joinUrl, onClose }: PairingMo
           {statusLabel}
         </p>
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-4 w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
-        >
+        <button type="button" onClick={onClose} className={`mt-4 w-full ${ACCENT_SURFACE} px-4 py-2 text-sm font-medium`}>
           Cerrar
         </button>
       </div>

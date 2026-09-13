@@ -8,6 +8,7 @@ import { PromptDialog } from '../components/shared/PromptDialog'
 import { DEFAULT_CALIBRATION, getEffectiveColors, type CalibrationSettings } from '../engine/calibrationEngine'
 import { useWakeLock } from '../hooks/useWakeLock'
 import { useProfilesStore } from '../stores/profilesStore'
+import { ACCENT_SURFACE, FONT_DISPLAY, LINK } from '../styles/tokens'
 
 export function GlassTestPage() {
   const navigate = useNavigate()
@@ -76,8 +77,8 @@ export function GlassTestPage() {
         {/* Cruce de referencia fijo al viewport (no se mueve con mirror/offset)
             para poder detectar desplazamientos horizontales y verticales. */}
         <div className="pointer-events-none absolute inset-0 z-10">
-          <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-blue-500/30" />
-          <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-blue-500/30" />
+          <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/20" />
+          <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/20" />
         </div>
 
         <div className="flex min-h-full items-center justify-center p-8">
@@ -90,11 +91,11 @@ export function GlassTestPage() {
           <button
             type="button"
             onClick={() => navigate('/guiones')}
-            className="shrink-0 text-xs font-medium whitespace-nowrap text-blue-400 hover:underline"
+            className={`shrink-0 text-xs font-medium whitespace-nowrap ${LINK} hover:underline`}
           >
             ‹ Biblioteca
           </button>
-          <h1 className="min-w-0 flex-1 truncate text-center text-sm font-semibold text-gray-100">Prueba de vidrio</h1>
+          <h1 className={`min-w-0 flex-1 truncate text-center text-sm font-semibold text-gray-100 ${FONT_DISPLAY}`}>Prueba de vidrio</h1>
           <button
             type="button"
             onClick={() => setPanelOpen((v) => !v)}
@@ -137,7 +138,7 @@ export function GlassTestPage() {
               <button
                 type="button"
                 onClick={handleSaveChanges}
-                className="flex-1 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+                className={`flex-1 ${ACCENT_SURFACE} px-3 py-1.5 text-xs font-medium`}
               >
                 Guardar
               </button>

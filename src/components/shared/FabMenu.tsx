@@ -7,7 +7,11 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { FilePlusIcon, FolderPlusIcon, PlusIcon } from './Icons'
-import { LIB_ACCENT_BG, LIB_ACCENT_BG_HOVER, LIB_RADIUS_MENU, LIB_SURFACE_RAISED } from '../../styles/libraryTokens'
+import { ACCENT_BG, ACCENT_BG_HOVER, ON_ACCENT, RADIUS_MENU, SURFACE_RAISED } from '../../styles/tokens'
+
+// Sombra suave con el tono del acento (no gris genérico): mismo warm
+// amber que el resto de la marca, apenas insinuado detrás del FAB.
+const FAB_SHADOW = 'shadow-[0_8px_24px_rgba(242,169,59,0.45)]'
 
 interface FabMenuProps {
   onNewScript: () => void
@@ -48,7 +52,7 @@ export function FabMenu({ onNewScript, onNewFolder }: FabMenuProps) {
         type="button"
         onClick={onNewScript}
         aria-label="Nuevo guion"
-        className={`fixed right-6 bottom-6 z-40 flex h-14 w-14 items-center justify-center rounded-full ${LIB_ACCENT_BG} text-white shadow-[0_8px_24px_rgba(37,99,235,0.45)] transition-transform ${LIB_ACCENT_BG_HOVER} active:scale-95`}
+        className={`fixed right-6 bottom-6 z-40 flex h-14 w-14 items-center justify-center rounded-full ${ACCENT_BG} ${ON_ACCENT} ${FAB_SHADOW} transition-transform ${ACCENT_BG_HOVER} active:scale-95`}
       >
         <PlusIcon className="h-6 w-6" />
       </button>,
@@ -59,7 +63,7 @@ export function FabMenu({ onNewScript, onNewFolder }: FabMenuProps) {
   return createPortal(
     <div data-fab-menu className="fixed right-6 bottom-6 z-40 flex flex-col items-end gap-2">
       {open && (
-        <div className={`flex flex-col gap-1 ${LIB_RADIUS_MENU} ${LIB_SURFACE_RAISED} p-2 shadow-xl`}>
+        <div className={`flex flex-col gap-1 ${RADIUS_MENU} ${SURFACE_RAISED} p-2 shadow-xl`}>
           <button
             type="button"
             onClick={() => {
@@ -88,7 +92,7 @@ export function FabMenu({ onNewScript, onNewFolder }: FabMenuProps) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={open ? 'Cerrar' : 'Crear'}
-        className={`flex h-14 w-14 items-center justify-center rounded-full ${LIB_ACCENT_BG} text-white shadow-[0_8px_24px_rgba(37,99,235,0.45)] transition-transform ${LIB_ACCENT_BG_HOVER} active:scale-95`}
+        className={`flex h-14 w-14 items-center justify-center rounded-full ${ACCENT_BG} ${ON_ACCENT} ${FAB_SHADOW} transition-transform ${ACCENT_BG_HOVER} active:scale-95`}
       >
         <PlusIcon className={`h-6 w-6 transition-transform ${open ? 'rotate-45' : ''}`} />
       </button>

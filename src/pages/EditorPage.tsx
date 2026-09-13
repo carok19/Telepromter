@@ -7,6 +7,7 @@ import { FolderPickerDialog } from '../components/shared/FolderPickerDialog'
 import { db, type ScriptRecord } from '../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../engine/duration'
 import { useScriptsStore } from '../stores/scriptsStore'
+import { BTN_PRIMARY, FONT_DISPLAY } from '../styles/tokens'
 
 const AUTOSAVE_DELAY_MS = 500
 
@@ -267,7 +268,7 @@ export function EditorPage() {
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className="shrink-0 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-40"
+            className={`shrink-0 ${BTN_PRIMARY} disabled:cursor-not-allowed disabled:opacity-40`}
           >
             Guardar
           </button>
@@ -276,7 +277,7 @@ export function EditorPage() {
           value={title}
           onChange={(e) => handleTitleChange(e.target.value)}
           placeholder="Sin título"
-          className="w-full min-w-0 bg-transparent text-lg font-medium text-gray-100 placeholder:text-gray-600 focus:outline-none"
+          className={`w-full min-w-0 bg-transparent text-lg font-medium text-gray-100 placeholder:text-gray-600 focus:outline-none ${FONT_DISPLAY}`}
         />
       </header>
 

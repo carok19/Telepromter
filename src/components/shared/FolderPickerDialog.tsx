@@ -6,6 +6,7 @@
 // ScriptCard, en vez de un paso de selección + confirmación aparte.
 import { useEffect } from 'react'
 import type { FolderRecord } from '../../db/db'
+import { FONT_DISPLAY, SURFACE_RAISED } from '../../styles/tokens'
 
 interface FolderPickerDialogProps {
   folders: FolderRecord[]
@@ -33,9 +34,9 @@ export function FolderPickerDialog({ folders, onSelect, onClose }: FolderPickerD
         role="dialog"
         aria-modal="true"
         aria-labelledby="folder-picker-title"
-        className="w-full max-w-sm rounded-lg border border-white/10 bg-[#15171e] p-5 shadow-xl"
+        className={`w-full max-w-sm rounded-lg border border-white/10 ${SURFACE_RAISED} p-5 shadow-xl`}
       >
-        <h2 id="folder-picker-title" className="text-base font-semibold text-gray-100">
+        <h2 id="folder-picker-title" className={`${FONT_DISPLAY} text-base font-semibold text-gray-100`}>
           ¿En qué carpeta guardamos este guion?
         </h2>
         <p className="mt-1 text-sm text-gray-400">Después lo podés mover desde "Mover a carpeta".</p>

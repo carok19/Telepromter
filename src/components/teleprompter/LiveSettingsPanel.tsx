@@ -7,6 +7,7 @@
 // duplicar el control.
 import { CALIBRATION_RANGES, type CalibrationSettings, type MirrorMode, type TextAlign } from '../../engine/calibrationEngine'
 import { Slider } from '../shared/Slider'
+import { ACCENT_SOFT_BG, ACCENT_TEXT } from '../../styles/tokens'
 
 const MIRROR_OPTIONS: Array<[MirrorMode, string]> = [
   ['none', 'Normal'],
@@ -69,7 +70,7 @@ export function LiveSettingsPanel({ settings, onChange, onSave, onClose }: LiveS
                 type="button"
                 onClick={() => onChange({ textAlign: value })}
                 className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-                  settings.textAlign === value ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
+                  settings.textAlign === value ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}` : 'text-gray-400 hover:text-gray-100'
                 }`}
               >
                 {label}
@@ -87,7 +88,7 @@ export function LiveSettingsPanel({ settings, onChange, onSave, onClose }: LiveS
                 type="button"
                 onClick={() => onChange({ mirror: value })}
                 className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-                  settings.mirror === value ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
+                  settings.mirror === value ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}` : 'text-gray-400 hover:text-gray-100'
                 }`}
               >
                 {label}

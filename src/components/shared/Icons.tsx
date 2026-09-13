@@ -175,6 +175,37 @@ export function SearchIcon({ className = DEFAULT_SIZE }: IconProps) {
   )
 }
 
+export function FolderIcon({ className = DEFAULT_SIZE }: IconProps) {
+  return (
+    <svg {...strokeProps} className={className} aria-hidden="true">
+      <path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4.5l2 2H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2Z" />
+    </svg>
+  )
+}
+
+// Reemplaza los caracteres de texto "⋯"/"⋮" (glifos de la fuente del
+// sistema, no coherentes con el resto del set) usados como botón de "más
+// acciones" — puntos rellenos, misma familia que Play/Pause.
+export function MoreHorizontalIcon({ className = DEFAULT_SIZE }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <circle cx="5" cy="12" r="1.75" />
+      <circle cx="12" cy="12" r="1.75" />
+      <circle cx="19" cy="12" r="1.75" />
+    </svg>
+  )
+}
+
+export function MoreVerticalIcon({ className = DEFAULT_SIZE }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <circle cx="12" cy="5" r="1.75" />
+      <circle cx="12" cy="12" r="1.75" />
+      <circle cx="12" cy="19" r="1.75" />
+    </svg>
+  )
+}
+
 export function FolderPlusIcon({ className = DEFAULT_SIZE }: IconProps) {
   return (
     <svg {...strokeProps} className={className} aria-hidden="true">

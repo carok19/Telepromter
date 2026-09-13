@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type MouseEvent, type RefObject } from 'react'
 import type { EditorCanvasHandle } from './EditorCanvas'
+import { ACCENT_SOFT_BG, ACCENT_TEXT } from '../../styles/tokens'
 
 interface EditorToolbarProps {
   canvasRef: RefObject<EditorCanvasHandle | null>
@@ -58,7 +59,7 @@ export function EditorToolbar({ canvasRef }: EditorToolbarProps) {
 
   const buttonClass = (isActive: boolean) =>
     `rounded px-3 py-1.5 text-sm font-medium transition-colors ${
-      isActive ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:bg-white/5 hover:text-gray-100'
+      isActive ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}` : 'text-gray-400 hover:bg-white/5 hover:text-gray-100'
     }`
 
   // Ancho angosto (360px): 8 botones + 2 separadores nunca entran parejos

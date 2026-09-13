@@ -16,6 +16,7 @@
 // pantalla, sin haber mostrado nunca nada ahí.
 import { useLocation } from 'react-router-dom'
 import { usePwaUpdate } from '../../hooks/usePwaUpdate'
+import { ACCENT_BG, ACCENT_BG_HOVER, FONT_DISPLAY, ON_ACCENT } from '../../styles/tokens'
 
 export function UpdateBanner() {
   const { needRefresh, isSafeToApply, applyNow } = usePwaUpdate()
@@ -25,12 +26,12 @@ export function UpdateBanner() {
   if (!needRefresh || isSafeToApply) return null
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 flex flex-wrap items-center justify-between gap-3 border-t border-blue-500/30 bg-[#0f1117] px-4 py-3 text-sm text-gray-200 shadow-lg">
+    <div className="fixed inset-x-0 bottom-0 z-50 flex flex-wrap items-center justify-between gap-3 border-t border-accent/30 bg-[#0f1117] px-4 py-3 text-sm text-gray-200 shadow-lg">
       <span>Hay una actualización disponible. Se va a aplicar sola apenas termines.</span>
       <button
         type="button"
         onClick={applyNow}
-        className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500"
+        className={`shrink-0 rounded-md ${ACCENT_BG} px-3 py-1.5 text-xs font-medium ${ON_ACCENT} ${ACCENT_BG_HOVER} ${FONT_DISPLAY}`}
       >
         Actualizar ahora
       </button>

@@ -1,4 +1,5 @@
 import type { MirrorMode } from '../../engine/calibrationEngine'
+import { ACCENT_SOFT_BG, ACCENT_TEXT } from '../../styles/tokens'
 
 interface MirrorModeSelectorProps {
   value: MirrorMode
@@ -20,7 +21,7 @@ export function MirrorModeSelector({ value, onChange }: MirrorModeSelectorProps)
           type="button"
           onClick={() => onChange(mode)}
           className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-            value === mode ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
+            value === mode ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}` : 'text-gray-400 hover:text-gray-100'
           }`}
         >
           {label}

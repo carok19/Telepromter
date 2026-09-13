@@ -46,6 +46,13 @@ function PatternContent() {
   )
 }
 
+// Identidad visual de Robress (tipografía Fredoka/Inter, ver index.css):
+// deliberadamente NO llega hasta acá. El patrón de calibración depende
+// del vidrio real del usuario, no de la marca — se fija la tipografía de
+// sistema de siempre para que cambiar la fuente de la app nunca mueva un
+// solo píxel de lo que el usuario ya calibró.
+const LEGACY_SYSTEM_FONT = "system-ui, 'Segoe UI', Roboto, sans-serif"
+
 export function GlassTestPattern({ settings }: GlassTestPatternProps) {
   const stageStyle = buildCalibrationStyle(settings)
   const ghostStyle = buildGhostLayerStyle(settings)
@@ -57,7 +64,7 @@ export function GlassTestPattern({ settings }: GlassTestPatternProps) {
     // contenido (min-width: auto — el mismo tipo de problema que min-height
     // causó en el viewport del teleprompter en Fase 2), lo que impediría
     // que break-words entrara en efecto. No cambia nada visible del texto.
-    <div style={{ ...stageStyle, minWidth: 0 }}>
+    <div style={{ ...stageStyle, minWidth: 0, fontFamily: LEGACY_SYSTEM_FONT }}>
       <PatternContent />
       {ghostStyle && (
         <div aria-hidden="true" style={ghostStyle}>

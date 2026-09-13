@@ -34,11 +34,19 @@ import {
 import { usePlayerStore } from '../stores/playerStore'
 import { useProfilesStore } from '../stores/profilesStore'
 import { useRemoteStore } from '../stores/remoteStore'
+import { ACCENT_BG, ACCENT_BG_HOVER, FONT_DISPLAY, ON_ACCENT } from '../styles/tokens'
 
 // Recuerda el último perfil elegido para el teleprompter entre sesiones. Es
 // una preferencia liviana de UI (un id), no datos del dominio — se guarda en
 // localStorage a propósito, sin tocar el esquema de Dexie para esto.
 const LAST_PROFILE_STORAGE_KEY = 'robress:teleprompterProfileId'
+
+// Identidad visual de Robress (tipografía Fredoka/Inter, ver index.css):
+// deliberadamente NO llega hasta el texto del guion en pantalla. Depende de
+// la calibración del usuario, no de la marca — se fija la tipografía de
+// sistema de siempre para que cambiar la fuente de la app nunca mueva un
+// solo píxel de lo que el usuario ya calibró detrás del vidrio.
+const LEGACY_SYSTEM_FONT = "system-ui, 'Segoe UI', Roboto, sans-serif"
 
 // F8.3: cota máxima de cuánto se demora en publicar el progreso al backend
 // de control remoto mientras se reproduce (los cambios de estado discretos
@@ -768,7 +776,7 @@ function TeleprompterSession({
         <button
           type="button"
           onClick={() => navigate('/guiones')}
-          className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+          className={`${FONT_DISPLAY} rounded-md ${ACCENT_BG} px-4 py-2 text-sm font-medium ${ON_ACCENT} ${ACCENT_BG_HOVER}`}
         >
           Volver a Mis guiones
         </button>
@@ -860,7 +868,7 @@ function TeleprompterSession({
           <button type="button" onClick={handleBack} className="shrink-0 text-sm text-gray-400 hover:text-gray-100">
             ← Volver
           </button>
-          <h1 className="min-w-0 flex-1 truncate text-lg font-medium text-gray-100">{script.title || 'Sin título'}</h1>
+          <h1 className={`min-w-0 flex-1 truncate text-lg font-medium text-gray-100 ${FONT_DISPLAY}`}>{script.title || 'Sin título'}</h1>
           <span className="shrink-0 text-xs text-gray-500">{Math.round(progress * 100)}%</span>
           {fsSupported && (
             <button
@@ -908,7 +916,7 @@ function TeleprompterSession({
             que el motor transforma — nunca queda sin estilo: eso era
             justamente la causa del bug (ver el comentario de
             effectiveSettings más arriba). */}
-        <div style={stageStyle}>
+        <div style={{ ...stageStyle, fontFamily: LEGACY_SYSTEM_FONT }}>
           <div
             ref={contentRef}
             // position: relative (siempre) para que los marcadores de pausa
@@ -997,7 +1005,7 @@ function TeleprompterSession({
             <button
               type="button"
               onClick={togglePlay}
-              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+              className={`${FONT_DISPLAY} rounded-md ${ACCENT_BG} px-4 py-2 text-sm font-medium ${ON_ACCENT} ${ACCENT_BG_HOVER}`}
             >
               {playLabel}
             </button>
@@ -1068,7 +1076,7 @@ function TeleprompterSession({
           </label>
 
           <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
-            <div className="h-full bg-blue-500" style={{ width: `${Math.round(progress * 100)}%` }} />
+            <div className={`h-full ${ACCENT_BG}`} style={{ width: `${Math.round(progress * 100)}%` }} />
           </div>
 
           <span className="text-xs text-gray-500">{statusLabel}</span>

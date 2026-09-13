@@ -9,11 +9,25 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
-import { ChevronDownIcon, FileTextIcon, SettingsIcon } from '../components/shared/Icons'
+import { ChevronDownIcon, FileTextIcon, MoreVerticalIcon, SettingsIcon } from '../components/shared/Icons'
 import { PromptDialog } from '../components/shared/PromptDialog'
 import type { CalibrationProfileRecord } from '../db/db'
 import { useDropdownMenu } from '../hooks/useDropdownMenu'
 import { useProfilesStore } from '../stores/profilesStore'
+import {
+  ACCENT_TEXT,
+  FONT_DISPLAY,
+  LINK,
+  PAGE,
+  RADIUS_CARD,
+  RADIUS_MENU,
+  SCREEN_TITLE,
+  SURFACE,
+  SURFACE_BORDER,
+  SURFACE_HOVER,
+  SURFACE_RAISED,
+  TEXT_MUTED,
+} from '../styles/tokens'
 
 type DialogState =
   | { type: 'none' }
@@ -31,26 +45,26 @@ function ProfileRow({ profile, onRename, onSetDefault, onDelete }: ProfileRowPro
   const { open, setOpen, position, anchorRef, menuRef } = useDropdownMenu<HTMLDivElement>('right')
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-[#12151c] px-4 py-3">
+    <div className={`flex items-center justify-between gap-3 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} px-4 py-3`}>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-gray-100">{profile.name}</p>
-        {profile.isDefault && <p className="mt-0.5 text-xs font-medium text-blue-400">Predeterminado</p>}
+        <p className={`truncate text-sm font-medium text-gray-100 ${FONT_DISPLAY}`}>{profile.name}</p>
+        {profile.isDefault && <p className={`mt-0.5 text-xs font-medium ${ACCENT_TEXT}`}>Predeterminado</p>}
       </div>
       <div ref={anchorRef} className="relative shrink-0">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-label={`Más acciones para el perfil ${profile.name}`}
-          className="rounded-md p-1.5 text-gray-400 hover:bg-white/5 hover:text-gray-200"
+          className="rounded-full p-1.5 text-gray-400 hover:bg-white/5 hover:text-gray-200"
         >
-          ⋮
+          <MoreVerticalIcon className="h-4 w-4" />
         </button>
         {open &&
           createPortal(
             <div
               ref={menuRef}
               style={{ position: 'fixed', top: position.top ?? undefined, bottom: position.bottom ?? undefined, left: position.left }}
-              className="z-50 w-48 rounded-md border border-white/10 bg-[#15171e] py-1 shadow-lg"
+              className={`z-50 w-48 ${RADIUS_MENU} ${SURFACE_RAISED} py-1 shadow-xl`}
             >
               <button
                 type="button"
@@ -111,42 +125,42 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-5 bg-[#0b0c10] px-4 py-4 text-gray-100">
-      <header className="flex items-center justify-between">
-        <button type="button" onClick={() => navigate('/guiones')} className="text-sm font-medium text-blue-400 hover:underline">
+    <div className={PAGE}>
+      <header className="mb-5 flex items-center justify-between">
+        <button type="button" onClick={() => navigate('/guiones')} className={`text-sm font-medium ${LINK}`}>
           ‹ Biblioteca
         </button>
       </header>
 
-      <h1 className="text-2xl font-semibold text-gray-100">Configuración</h1>
+      <h1 className={SCREEN_TITLE}>Configuración</h1>
 
-      <div className="flex flex-col gap-2">
+      <div className="mt-5 flex flex-col gap-2">
         <button
           type="button"
           onClick={() => navigate('/ayuda')}
-          className="flex items-center gap-3 rounded-lg border border-white/10 bg-[#12151c] px-4 py-3 text-left transition-colors hover:border-blue-500/40"
+          className={`flex items-center gap-3 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} px-4 py-3 text-left transition-colors ${SURFACE_HOVER}`}
         >
-          <FileTextIcon className="h-4 w-4 shrink-0 text-blue-400" />
+          <FileTextIcon className={`h-4 w-4 shrink-0 ${TEXT_MUTED}`} />
           <span className="flex-1 text-sm text-gray-100">Ayuda</span>
           <ChevronDownIcon className="h-4 w-4 shrink-0 -rotate-90 text-gray-500" />
         </button>
         <button
           type="button"
           onClick={() => navigate('/glass-test')}
-          className="flex items-center gap-3 rounded-lg border border-white/10 bg-[#12151c] px-4 py-3 text-left transition-colors hover:border-blue-500/40"
+          className={`flex items-center gap-3 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} px-4 py-3 text-left transition-colors ${SURFACE_HOVER}`}
         >
-          <SettingsIcon className="h-4 w-4 shrink-0 text-blue-400" />
+          <SettingsIcon className={`h-4 w-4 shrink-0 ${TEXT_MUTED}`} />
           <span className="flex-1 text-sm text-gray-100">Prueba de vidrio</span>
           <ChevronDownIcon className="h-4 w-4 shrink-0 -rotate-90 text-gray-500" />
         </button>
       </div>
 
-      <div>
+      <div className="mt-5">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Perfiles de calibración</p>
         {profiles.length === 0 ? (
           <p className="text-sm text-gray-500">
             Todavía no creaste ningún perfil. Se crean desde{' '}
-            <button type="button" onClick={() => navigate('/glass-test')} className="text-blue-400 hover:underline">
+            <button type="button" onClick={() => navigate('/glass-test')} className={`${LINK} hover:underline`}>
               Prueba de vidrio
             </button>
             .

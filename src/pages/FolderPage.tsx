@@ -13,23 +13,25 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ScriptCard } from '../components/library/ScriptCard'
+import { EmptyState } from '../components/shared/EmptyState'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { FabMenu } from '../components/shared/FabMenu'
 import { PromptDialog } from '../components/shared/PromptDialog'
-import { SearchIcon } from '../components/shared/Icons'
+import { MoreHorizontalIcon, SearchIcon } from '../components/shared/Icons'
 import type { DraftRecord, ScriptRecord } from '../db/db'
 import { useDropdownMenu } from '../hooks/useDropdownMenu'
 import { useScriptsStore } from '../stores/scriptsStore'
 import {
-  LIB_GRID_GAP,
-  LIB_PAGE,
-  LIB_RADIUS_MENU,
-  LIB_SEARCH_INPUT,
-  LIB_SURFACE_RAISED,
-  LIB_TEXT_FAINT,
-  LIB_TEXT_MUTED,
-  LIB_TITLE,
-} from '../styles/libraryTokens'
+  GRID_GAP,
+  LINK,
+  PAGE,
+  RADIUS_MENU,
+  SEARCH_INPUT,
+  SURFACE_RAISED,
+  TEXT_FAINT,
+  TEXT_MUTED,
+  SCREEN_TITLE,
+} from '../styles/tokens'
 
 // Fusiona un borrador pendiente sobre su guion — se usa tanto para uno YA
 // guardado con una edición sin confirmar como para uno que TODAVÍA no se
@@ -144,9 +146,9 @@ export function FolderPage() {
   // se espera a que termine de cargar antes de decidir esto.
   if (!loading && !isSinCarpeta && !folder) {
     return (
-      <div className={`p-8 text-sm ${LIB_TEXT_MUTED}`}>
+      <div className={`p-8 text-sm ${TEXT_MUTED}`}>
         Esta carpeta ya no existe.{' '}
-        <button type="button" onClick={() => navigate('/guiones')} className="text-white underline underline-offset-2 hover:no-underline">
+        <button type="button" onClick={() => navigate('/guiones')} className={`${LINK} hover:underline`}>
           Volver a la biblioteca
         </button>
       </div>
@@ -156,9 +158,9 @@ export function FolderPage() {
   const title = isSinCarpeta ? 'Sin carpeta' : (folder?.name ?? '')
 
   return (
-    <div className={LIB_PAGE}>
+    <div className={PAGE}>
       <header className="mb-5 flex items-center justify-between">
-        <button type="button" onClick={() => navigate('/guiones')} className="text-sm font-medium text-white/90 hover:text-white">
+        <button type="button" onClick={() => navigate('/guiones')} className={`text-sm font-medium ${LINK}`}>
           ‹ Biblioteca
         </button>
         {!isSinCarpeta && folder && (
@@ -167,16 +169,16 @@ export function FolderPage() {
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
               aria-label={`Más acciones para la carpeta ${folder.name}`}
-              className={`rounded-full p-1.5 text-xl leading-none ${LIB_TEXT_MUTED} hover:bg-white/5 hover:text-white`}
+              className={`rounded-full p-1.5 ${TEXT_MUTED} hover:bg-white/5 hover:text-white`}
             >
-              ⋯
+              <MoreHorizontalIcon className="h-4 w-4" />
             </button>
             {menuOpen &&
               createPortal(
                 <div
                   ref={menuRef}
                   style={{ position: 'fixed', top: position.top ?? undefined, bottom: position.bottom ?? undefined, left: position.left }}
-                  className={`z-50 w-40 ${LIB_RADIUS_MENU} ${LIB_SURFACE_RAISED} py-1 shadow-xl`}
+                  className={`z-50 w-40 ${RADIUS_MENU} ${SURFACE_RAISED} py-1 shadow-xl`}
                 >
                   <button
                     type="button"
@@ -212,28 +214,35 @@ export function FolderPage() {
         )}
       </header>
 
-      <h1 className={LIB_TITLE}>{title}</h1>
+      <h1 className={SCREEN_TITLE}>{title}</h1>
 
       <div className="relative mt-4 mb-5">
-        <SearchIcon className={`pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
+        <SearchIcon className={`pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 ${TEXT_FAINT}`} />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={`Buscar en ${title}...`}
-          className={LIB_SEARCH_INPUT}
+          className={SEARCH_INPUT}
         />
       </div>
 
-      {loading && <p className={`text-sm ${LIB_TEXT_MUTED}`}>Cargando...</p>}
+      {loading && <p className={`text-sm ${TEXT_MUTED}`}>Cargando...</p>}
 
-      {!loading && visibleScripts.length === 0 && (
-        <p className={`text-sm ${LIB_TEXT_MUTED}`}>
-          {term ? 'No se encontraron guiones con ese título.' : 'Esta carpeta todavía no tiene guiones.'}
-        </p>
+      {!loading && visibleScripts.length === 0 && term && (
+        <p className={`text-sm ${TEXT_MUTED}`}>No se encontraron guiones con ese título.</p>
       )}
 
-      <div className={`flex flex-col ${LIB_GRID_GAP}`}>
+      {!loading && visibleScripts.length === 0 && !term && (
+        <EmptyState
+          title="Esta carpeta está vacía"
+          description="Creá un guion nuevo para empezar a llenarla."
+          actionLabel="Crear guion"
+          onAction={handleCreateScript}
+        />
+      )}
+
+      <div className={`flex flex-col ${GRID_GAP}`}>
         {visibleScripts.map(({ script, isDraft }) => (
           <ScriptCard
             key={script.id}

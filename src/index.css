@@ -1,7 +1,57 @@
 @import 'tailwindcss';
 
+/* Identidad visual de Robress — tipografía propia, autoalojada (sin CDN,
+   funciona sin internet). Cada familia es UNA sola fuente variable (eje
+   wght) que cubre todos los pesos que usa la app, así que un solo
+   archivo .woff2 por familia alcanza en vez de uno por peso. Son los
+   mismos archivos que sirve Google Fonts en su subset "latin" (glifos
+   0000-00FF + puntuación básica), bajados una vez y servidos localmente:
+   ver public/fonts/*-OFL.txt para la licencia (SIL Open Font License).
+
+   Deliberadamente NO se usan para el contenido del teleprompter ni de la
+   Prueba de vidrio — esas pantallas dependen de la calibración de vidrio
+   del usuario, no de la identidad visual de la app. */
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 500 700;
+  font-display: swap;
+  src: url('/fonts/Fredoka-latin-variable.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/Inter-latin-variable.woff2') format('woff2');
+}
+
 :root {
   color-scheme: dark;
+}
+
+/* @theme (Tailwind v4) publica estas variables en :root Y genera las
+   utilidades a juego (font-display/font-body, bg-accent/text-accent/…) —
+   un solo lugar para toda la identidad visual de la app. */
+@theme {
+  /* Tipografía: redondeada con carácter para títulos/botones/nombres,
+     neutra y muy legible para texto corrido y metadatos. Deliberadamente
+     NO se usan para el contenido del teleprompter ni de la Prueba de
+     vidrio — esas pantallas dependen de la calibración del usuario. */
+  --font-display: 'Fredoka', system-ui, 'Segoe UI', sans-serif;
+  --font-body: 'Inter', system-ui, 'Segoe UI', sans-serif;
+
+  /* Ámbar cálido: único acento de marca de toda la app (FAB, opción
+     activa, estado seleccionado, enlaces). El destructivo sigue en rojo
+     (Tailwind red-400/500), sin token propio. */
+  --color-accent: #f2a93b;
+  --color-accent-hover: #f7c066;
+  --color-accent-pressed: #d9922a;
+  /* Texto/íconos sobre una superficie rellena de acento: el mismo tono
+     del fondo de la app, para máximo contraste (9.8:1) sin salir de la
+     paleta. */
+  --color-onaccent: #0b0c10;
 }
 
 html,
@@ -14,6 +64,6 @@ body {
   margin: 0;
   background-color: #0b0c10;
   color: #e5e7eb;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
 }

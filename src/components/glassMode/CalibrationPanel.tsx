@@ -8,6 +8,7 @@ import {
   type TextAlign,
 } from '../../engine/calibrationEngine'
 import { Slider } from '../shared/Slider'
+import { ACCENT_SOFT_BG, ACCENT_TEXT } from '../../styles/tokens'
 
 interface CalibrationPanelProps {
   settings: CalibrationSettings
@@ -100,7 +101,7 @@ export function CalibrationPanel({ settings, onChange }: CalibrationPanelProps) 
                 type="button"
                 onClick={() => onChange({ textAlign: value })}
                 className={`flex-1 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-                  settings.textAlign === value ? 'bg-blue-600/20 text-blue-400' : 'text-gray-400 hover:text-gray-100'
+                  settings.textAlign === value ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}` : 'text-gray-400 hover:text-gray-100'
                 }`}
               >
                 {label}
@@ -150,7 +151,7 @@ export function CalibrationPanel({ settings, onChange }: CalibrationPanelProps) 
             type="checkbox"
             checked={settings.invertColors}
             onChange={(e) => onChange({ invertColors: e.target.checked })}
-            className="h-4 w-4 accent-blue-500"
+            className="h-4 w-4 accent-accent"
           />
         </label>
       </Section>

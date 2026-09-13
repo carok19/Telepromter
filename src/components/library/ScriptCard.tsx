@@ -4,17 +4,18 @@ import type { FolderRecord, ScriptRecord } from '../../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../../engine/duration'
 import { extractTextPreview } from '../../engine/textPreview'
 import { useDropdownMenu } from '../../hooks/useDropdownMenu'
-import { FileTextIcon } from '../shared/Icons'
+import { FileTextIcon, MoreVerticalIcon } from '../shared/Icons'
 import {
-  LIB_CARD_BORDER,
-  LIB_RADIUS_CARD,
-  LIB_RADIUS_MENU,
-  LIB_SURFACE,
-  LIB_SURFACE_HOVER,
-  LIB_SURFACE_RAISED,
-  LIB_TEXT_FAINT,
-  LIB_TEXT_MUTED,
-} from '../../styles/libraryTokens'
+  SURFACE_BORDER,
+  FONT_DISPLAY,
+  RADIUS_CARD,
+  RADIUS_MENU,
+  SURFACE,
+  SURFACE_HOVER,
+  SURFACE_RAISED,
+  TEXT_FAINT,
+  TEXT_MUTED,
+} from '../../styles/tokens'
 
 interface ScriptCardProps {
   // Cuando `isDraft` es true, el llamador ya reemplazó title/content acá
@@ -78,21 +79,21 @@ export function ScriptCard({
     // 360px competía por espacio con el título.
     <div
       onClick={onOpenTeleprompter}
-      className={`group relative cursor-pointer ${LIB_RADIUS_CARD} ${LIB_SURFACE} ${LIB_CARD_BORDER} p-3.5 transition-colors ${LIB_SURFACE_HOVER}`}
+      className={`group relative cursor-pointer ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} p-3.5 transition-colors ${SURFACE_HOVER}`}
     >
       <div className="flex items-start justify-between gap-3">
         {/* min-w-0 es lo que permite que title/preview trunquen en vez de
             empujar el ancho de la tarjeta — sin esto, a 360px con un
             título largo, la tarjeta entera se desbordaría. */}
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <FileTextIcon className={`mt-0.5 h-4 w-4 shrink-0 ${LIB_TEXT_MUTED}`} />
+          <FileTextIcon className={`mt-0.5 h-4 w-4 shrink-0 ${TEXT_MUTED}`} />
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[15px] font-semibold text-white">{script.title || 'Sin título'}</h2>
-            <p className={`mt-1 text-xs ${LIB_TEXT_FAINT}`}>
+            <h2 className={`truncate text-[15px] font-semibold text-white ${FONT_DISPLAY}`}>{script.title || 'Sin título'}</h2>
+            <p className={`mt-1 text-xs ${TEXT_FAINT}`}>
               {isDraft && <span className="mr-1 font-semibold text-amber-400">[BORRADOR]</span>}
               {wordCount} palabras · ~{duration} min · {updated}
             </p>
-            <p className={`mt-1.5 line-clamp-2 text-sm ${LIB_TEXT_MUTED}`}>{preview}</p>
+            <p className={`mt-1.5 line-clamp-2 text-sm ${TEXT_MUTED}`}>{preview}</p>
           </div>
         </div>
         <div ref={anchorRef} className="relative shrink-0">
@@ -102,10 +103,10 @@ export function ScriptCard({
               e.stopPropagation()
               setMenuOpen((v) => !v)
             }}
-            className={`rounded-full p-1 ${LIB_TEXT_FAINT} hover:bg-white/10 hover:text-white`}
+            className={`rounded-full p-1.5 ${TEXT_FAINT} hover:bg-white/10 hover:text-white`}
             aria-label="Más acciones"
           >
-            ⋮
+            <MoreVerticalIcon className="h-4 w-4" />
           </button>
           {menuOpen &&
             !showMoveMenu &&
@@ -119,7 +120,7 @@ export function ScriptCard({
                   bottom: position.bottom ?? undefined,
                   left: position.left,
                 }}
-                className={`z-50 w-44 ${LIB_RADIUS_MENU} ${LIB_SURFACE_RAISED} py-1 shadow-xl`}
+                className={`z-50 w-44 ${RADIUS_MENU} ${SURFACE_RAISED} py-1 shadow-xl`}
               >
                 <button
                   type="button"
@@ -181,7 +182,7 @@ export function ScriptCard({
                   bottom: position.bottom ?? undefined,
                   left: position.left,
                 }}
-                className={`z-50 max-h-56 w-44 overflow-y-auto ${LIB_RADIUS_MENU} ${LIB_SURFACE_RAISED} py-1 shadow-xl`}
+                className={`z-50 max-h-56 w-44 overflow-y-auto ${RADIUS_MENU} ${SURFACE_RAISED} py-1 shadow-xl`}
               >
                 <button
                   type="button"

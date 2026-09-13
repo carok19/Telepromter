@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom'
+import { FONT_DISPLAY, LINK } from '../../styles/tokens'
 
 interface PlaceholderPageProps {
   title: string
@@ -16,11 +17,11 @@ export function PlaceholderPage({ title, phase }: PlaceholderPageProps) {
       <button
         type="button"
         onClick={() => navigate('/guiones')}
-        className="absolute top-4 left-4 text-sm font-medium text-blue-400 hover:underline"
+        className={`absolute top-4 left-4 text-sm font-medium ${LINK} hover:underline`}
       >
         ‹ Biblioteca
       </button>
-      <h1 className="text-xl font-semibold text-gray-100">{title}</h1>
+      <h1 className={`${FONT_DISPLAY} text-xl font-semibold text-gray-100`}>{title}</h1>
       <p className="text-sm text-gray-500">Página en construcción — se implementa en {phase}.</p>
     </div>
   )

@@ -32,6 +32,11 @@ import {
   type RemoteSession,
 } from '../services/remoteSession'
 import { useRemoteStore } from '../stores/remoteStore'
+import { ACCENT_BG, ACCENT_BG_HOVER, ACCENT_SOFT_BG, ACCENT_TEXT, FONT_DISPLAY, ON_ACCENT, TEXT_MUTED } from '../styles/tokens'
+
+// Sombra de foco suave con el tono del acento (antes azul), para el botón
+// grande de Play/Pausa — mismo criterio que el FAB de la Biblioteca.
+const PLAY_BUTTON_GLOW = 'shadow-[0_0_0_6px_rgba(242,169,59,0.15)]'
 
 type ConnectionState = 'connecting' | 'connected' | 'not-found' | 'expired' | 'occupied' | 'ended' | 'error'
 
@@ -678,7 +683,7 @@ export function RemoteControlPage() {
         <div className="flex items-center gap-2.5">
           <img src={logo} alt="" width={36} height={36} className="rounded-lg" />
           <div className="flex flex-col">
-            <span className="text-sm font-semibold leading-tight text-gray-100">
+            <span className={`text-sm font-semibold leading-tight text-gray-100 ${FONT_DISPLAY}`}>
               Robress
               <br />
               Teleprompter
@@ -730,8 +735,8 @@ export function RemoteControlPage() {
               onClick={() => setScriptListOpen((v) => !v)}
               className="flex w-full items-center gap-2.5 rounded-lg border border-white/10 bg-[#0f1117] px-3 py-2.5 text-left transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <FileTextIcon className="h-4 w-4 shrink-0 text-blue-400" />
-              <span className="flex-1 truncate text-sm text-gray-100">{session?.scriptTitle || 'Sin guion'}</span>
+              <FileTextIcon className={`h-4 w-4 shrink-0 ${TEXT_MUTED}`} />
+              <span className={`flex-1 truncate text-sm text-gray-100 ${FONT_DISPLAY}`}>{session?.scriptTitle || 'Sin guion'}</span>
               {scriptListOpen ? (
                 <ChevronUpIcon className="h-4 w-4 shrink-0 text-gray-400" />
               ) : (
@@ -763,16 +768,16 @@ export function RemoteControlPage() {
                                 onClick={() => requestLoadScript(s.id)}
                                 className={`flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                                   s.id === currentScriptId
-                                    ? 'bg-blue-600/20 font-semibold text-blue-400'
+                                    ? `${ACCENT_SOFT_BG} font-semibold ${ACCENT_TEXT}`
                                     : 'text-gray-300 hover:bg-white/5'
                                 }`}
                               >
                                 <span
                                   className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                                    s.id === currentScriptId ? 'bg-blue-400' : 'bg-transparent'
+                                    s.id === currentScriptId ? 'bg-accent' : 'bg-transparent'
                                   }`}
                                 />
-                                <span className="truncate">{s.title}</span>
+                                <span className={`truncate ${FONT_DISPLAY}`}>{s.title}</span>
                               </button>
                             ))}
                           </div>
@@ -786,7 +791,7 @@ export function RemoteControlPage() {
 
           {/* 3. ESTADO Y PROGRESO */}
           <section className="rounded-xl border border-white/10 bg-[#12151c] p-4 text-center">
-            <p className="truncate text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            <p className={`truncate text-[11px] font-semibold uppercase tracking-wider text-gray-500 ${FONT_DISPLAY}`}>
               {session?.scriptTitle || '—'}
             </p>
             <p className="mt-1 text-2xl font-semibold text-gray-100">{STATUS_LABELS[engineStatus] ?? engineStatus}</p>
@@ -808,7 +813,7 @@ export function RemoteControlPage() {
               >
                 <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
                   <div
-                    className={`h-full bg-blue-500 ${seekDrag.dragging ? '' : 'transition-[width]'}`}
+                    className={`h-full ${ACCENT_BG} ${seekDrag.dragging ? '' : 'transition-[width]'}`}
                     style={{ width: `${progressPct}%` }}
                   />
                 </div>
@@ -846,7 +851,7 @@ export function RemoteControlPage() {
                 onClick={handlePlayPause}
                 disabled={controlsDisabled}
                 aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
-                className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-[0_0_0_6px_rgba(37,99,235,0.15)] transition-transform hover:bg-blue-500 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
+                className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-full ${ACCENT_BG} ${ON_ACCENT} ${PLAY_BUTTON_GLOW} transition-transform ${ACCENT_BG_HOVER} active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none`}
               >
                 {isPlaying ? <PauseIcon className="h-8 w-8" /> : <PlayIcon className="ml-1 h-8 w-8" />}
               </button>
@@ -979,7 +984,7 @@ export function RemoteControlPage() {
                         onClick={() => sendCalibration('textAlign', value)}
                         className={`flex-1 rounded px-1 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                           calibration?.textAlign === value
-                            ? 'bg-blue-600/20 text-blue-400'
+                            ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}`
                             : 'text-gray-400 hover:text-gray-100'
                         }`}
                       >
@@ -1003,7 +1008,7 @@ export function RemoteControlPage() {
                           onClick={() => sendCalibration('mirror', value)}
                           className={`flex flex-1 items-center justify-center rounded px-1 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                             calibration?.mirror === value
-                              ? 'bg-blue-600/20 text-blue-400'
+                              ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}`
                               : 'text-gray-400 hover:text-gray-100'
                           }`}
                         >

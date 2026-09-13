@@ -9,26 +9,28 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import logo from '../assets/logo.svg'
 import { FolderCard } from '../components/library/FolderCard'
+import { EmptyState } from '../components/shared/EmptyState'
 import { FabMenu } from '../components/shared/FabMenu'
 import { PromptDialog } from '../components/shared/PromptDialog'
 import { FileTextIcon, SearchIcon, SettingsIcon } from '../components/shared/Icons'
 import { formatRelativeDate } from '../engine/relativeDate'
 import { useScriptsStore } from '../stores/scriptsStore'
 import {
-  LIB_CARD_BORDER,
-  LIB_GRID_GAP,
-  LIB_PAGE,
-  LIB_RADIUS_CARD,
-  LIB_SEARCH_INPUT,
-  LIB_SEGMENTED_OPTION_ACTIVE,
-  LIB_SEGMENTED_OPTION_INACTIVE,
-  LIB_SEGMENTED_TRACK,
-  LIB_SURFACE,
-  LIB_SURFACE_HOVER,
-  LIB_TEXT_FAINT,
-  LIB_TEXT_MUTED,
-  LIB_TITLE,
-} from '../styles/libraryTokens'
+  SURFACE_BORDER,
+  FONT_DISPLAY,
+  GRID_GAP,
+  PAGE,
+  RADIUS_CARD,
+  SEARCH_INPUT,
+  SEGMENTED_OPTION_ACTIVE,
+  SEGMENTED_OPTION_INACTIVE,
+  SEGMENTED_TRACK,
+  SURFACE,
+  SURFACE_HOVER,
+  TEXT_FAINT,
+  TEXT_MUTED,
+  SCREEN_TITLE,
+} from '../styles/tokens'
 
 type SortOption = 'recientes' | 'antiguos' | 'titulo'
 
@@ -135,7 +137,7 @@ export function LibraryPage() {
   }
 
   return (
-    <div className={LIB_PAGE}>
+    <div className={PAGE}>
       <header className="mb-5 flex items-center justify-between">
         <span className="h-9 w-9" aria-hidden="true" />
         <img src={logo} alt="Robress Teleprompter" width={36} height={36} className="rounded-lg" />
@@ -143,50 +145,55 @@ export function LibraryPage() {
           type="button"
           onClick={() => navigate('/configuracion')}
           aria-label="Configuración"
-          className={`flex h-9 w-9 items-center justify-center rounded-full ${LIB_SURFACE} ${LIB_TEXT_MUTED} ${LIB_SURFACE_HOVER}`}
+          className={`flex h-9 w-9 items-center justify-center rounded-full ${SURFACE} ${TEXT_MUTED} ${SURFACE_HOVER}`}
         >
           <SettingsIcon className="h-4 w-4" />
         </button>
       </header>
 
-      <h1 className={LIB_TITLE}>Guiones &amp; Carpetas</h1>
+      <h1 className={SCREEN_TITLE}>Guiones &amp; Carpetas</h1>
 
       <div className="relative mt-4">
-        <SearchIcon className={`pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 ${LIB_TEXT_FAINT}`} />
+        <SearchIcon className={`pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 ${TEXT_FAINT}`} />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar guiones y carpetas..."
-          className={LIB_SEARCH_INPUT}
+          className={SEARCH_INPUT}
         />
       </div>
 
-      <div className={`mt-3 mb-5 ${LIB_SEGMENTED_TRACK}`}>
+      <div className={`mt-3 mb-5 ${SEGMENTED_TRACK}`}>
         {SORT_OPTIONS.map(([value, label]) => (
           <button
             key={value}
             type="button"
             onClick={() => setSort(value)}
-            className={sort === value ? LIB_SEGMENTED_OPTION_ACTIVE : LIB_SEGMENTED_OPTION_INACTIVE}
+            className={sort === value ? SEGMENTED_OPTION_ACTIVE : SEGMENTED_OPTION_INACTIVE}
           >
             {label}
           </button>
         ))}
       </div>
 
-      {loading && <p className={`text-sm ${LIB_TEXT_MUTED}`}>Cargando...</p>}
+      {loading && <p className={`text-sm ${TEXT_MUTED}`}>Cargando...</p>}
 
-      {!loading && visibleFolders.length === 0 && matchingScripts.length === 0 && (
-        <p className={`text-sm ${LIB_TEXT_MUTED}`}>
-          {term
-            ? 'No se encontraron carpetas ni guiones con ese término.'
-            : 'Todavía no tenés guiones ni carpetas. Creá el primero con el botón +.'}
-        </p>
+      {!loading && visibleFolders.length === 0 && matchingScripts.length === 0 && term && (
+        <p className={`text-sm ${TEXT_MUTED}`}>No se encontraron carpetas ni guiones con ese término.</p>
+      )}
+
+      {!loading && visibleFolders.length === 0 && matchingScripts.length === 0 && !term && (
+        <EmptyState
+          title="Todavía no hay nada acá"
+          description="Creá tu primer guion o una carpeta para empezar a organizar tu biblioteca."
+          actionLabel="Crear guion"
+          onAction={handleCreateScript}
+        />
       )}
 
       {visibleFolders.length > 0 && (
-        <div className={`grid grid-cols-2 ${LIB_GRID_GAP}`}>
+        <div className={`grid grid-cols-2 ${GRID_GAP}`}>
           {visibleFolders.map((folder) => (
             <FolderCard
               key={folder.folderId ?? 'sin-carpeta'}
@@ -202,7 +209,7 @@ export function LibraryPage() {
 
       {term && (
         <div className="mt-5">
-          <p className={`mb-2.5 text-xs font-semibold tracking-wide uppercase ${LIB_TEXT_FAINT}`}>
+          <p className={`mb-2.5 text-xs font-semibold tracking-wide uppercase ${TEXT_FAINT}`}>
             {matchingScripts.length > 0 ? 'Guiones encontrados' : 'Sin guiones encontrados'}
           </p>
           <div className="flex flex-col gap-2">
@@ -211,11 +218,11 @@ export function LibraryPage() {
                 key={result.id}
                 type="button"
                 onClick={() => navigate(`/teleprompter/${result.id}`)}
-                className={`flex items-center gap-3 ${LIB_RADIUS_CARD} ${LIB_SURFACE} ${LIB_CARD_BORDER} px-4 py-3 text-left transition-colors ${LIB_SURFACE_HOVER}`}
+                className={`flex items-center gap-3 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} px-4 py-3 text-left transition-colors ${SURFACE_HOVER}`}
               >
-                <FileTextIcon className={`h-4 w-4 shrink-0 ${LIB_TEXT_MUTED}`} />
-                <span className="min-w-0 flex-1 truncate text-sm text-white">{result.title}</span>
-                <span className={`shrink-0 rounded-full bg-white/5 px-2 py-0.5 text-[11px] ${LIB_TEXT_MUTED}`}>
+                <FileTextIcon className={`h-4 w-4 shrink-0 ${TEXT_MUTED}`} />
+                <span className={`min-w-0 flex-1 truncate text-sm text-white ${FONT_DISPLAY}`}>{result.title}</span>
+                <span className={`shrink-0 rounded-full bg-white/5 px-2 py-0.5 text-[11px] ${TEXT_MUTED}`}>
                   {result.folderName}
                 </span>
               </button>
