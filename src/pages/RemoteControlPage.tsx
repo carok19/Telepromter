@@ -3,26 +3,28 @@
 // Envía comandos discretos al host y muestra el snapshot de reproducción
 // que el host publica — nunca mueve nada por sí mismo, nunca asume que un
 // comando llegó solo porque se tocó el botón.
+import {
+  ArrowLeftRight,
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  FastForward,
+  FileText,
+  Gauge,
+  Minus,
+  Pause,
+  Play,
+  Plus,
+  Rewind,
+  RotateCcw,
+  Settings,
+  Wifi,
+  WifiOff,
+} from 'lucide-react'
 import { useEffect, useRef, useState, type ComponentType, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { useParams } from 'react-router-dom'
 import logo from '../assets/logo.svg'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
-import {
-  ArrowLeftRightIcon,
-  ArrowUpDownIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  FastForwardIcon,
-  FileTextIcon,
-  MinusIcon,
-  PauseIcon,
-  PlayIcon,
-  PlusIcon,
-  RewindIcon,
-  RotateCcwIcon,
-  WifiIcon,
-  WifiOffIcon,
-} from '../components/shared/Icons'
 import { CALIBRATION_RANGES, DEFAULT_CALIBRATION, type MirrorMode, type TextAlign } from '../engine/calibrationEngine'
 import { DEFAULT_WPM } from '../engine/duration'
 import {
@@ -32,7 +34,8 @@ import {
   type RemoteSession,
 } from '../services/remoteSession'
 import { useRemoteStore } from '../stores/remoteStore'
-import { ACCENT_BG, ACCENT_BG_HOVER, ACCENT_SOFT_BG, ACCENT_TEXT, FONT_DISPLAY, ON_ACCENT, TEXT_MUTED } from '../styles/tokens'
+import { CONSOLE_SURFACE, FONT_CONSOLE } from '../styles/consoleTokens'
+import { ACCENT_BG, ACCENT_BG_HOVER, ACCENT_SOFT_BG, ACCENT_TEXT, FONT_DISPLAY, ON_ACCENT } from '../styles/tokens'
 
 // Sombra de foco suave con el tono del acento (antes azul), para el botón
 // grande de Play/Pausa — mismo criterio que el FAB de la Biblioteca.
@@ -264,8 +267,8 @@ const MIRROR_OPTIONS: Array<[MirrorMode, string]> = [
 // símbolos ↔/↕ como texto) — 'none' ("Normal") no tiene icono, se queda con
 // la etiqueta de texto.
 const MIRROR_ICONS: Partial<Record<MirrorMode, ComponentType<{ className?: string }>>> = {
-  horizontal: ArrowLeftRightIcon,
-  vertical: ArrowUpDownIcon,
+  horizontal: ArrowLeftRight,
+  vertical: ArrowUpDown,
 }
 
 const TEXT_ALIGN_OPTIONS: Array<[TextAlign, string]> = [
@@ -341,21 +344,21 @@ interface CalibrationStepperRowProps {
 
 function CalibrationStepperRow({ label, unit, disabled, stepper }: CalibrationStepperRowProps) {
   return (
-    <div className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-[#0f1117] px-3 py-2">
+    <div className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-[#0f1117] px-3 py-2">
       <span className="flex-1 truncate text-left text-xs text-gray-400">{label}</span>
       <button
         type="button"
         disabled={disabled}
         aria-label={`Disminuir ${label.toLowerCase()}`}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
         onPointerDown={stepper.decHold.onPointerDown}
         onPointerUp={() => stepper.release(stepper.decHold)}
         onPointerCancel={() => stepper.release(stepper.decHold)}
         onPointerLeave={() => stepper.release(stepper.decHold)}
       >
-        <MinusIcon className="h-4 w-4" />
+        <Minus className="h-4 w-4" />
       </button>
-      <span className="w-16 shrink-0 text-center text-sm font-semibold tabular-nums text-gray-100">
+      <span className={`w-16 shrink-0 text-center text-sm font-bold text-gray-100 tabular-nums ${FONT_CONSOLE}`}>
         {stepper.shown}
         {unit}
       </span>
@@ -363,13 +366,13 @@ function CalibrationStepperRow({ label, unit, disabled, stepper }: CalibrationSt
         type="button"
         disabled={disabled}
         aria-label={`Aumentar ${label.toLowerCase()}`}
-        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-white/10 text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
         onPointerDown={stepper.incHold.onPointerDown}
         onPointerUp={() => stepper.release(stepper.incHold)}
         onPointerCancel={() => stepper.release(stepper.incHold)}
         onPointerLeave={() => stepper.release(stepper.incHold)}
       >
-        <PlusIcon className="h-4 w-4" />
+        <Plus className="h-4 w-4" />
       </button>
     </div>
   )
@@ -694,7 +697,7 @@ export function RemoteControlPage() {
           lógica de siempre: state/online/errorDetail), nunca un valor
           ficticio. El ícono de la derecha es puramente indicativo (refleja
           `online`), no agrega ninguna acción nueva. */}
-      <header className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-[#12151c] px-3 py-2.5">
+      <header className={`flex items-center justify-between gap-3 rounded-xl ${CONSOLE_SURFACE} px-3 py-2.5`}>
         <div className="flex items-center gap-2.5">
           <img src={logo} alt="" width={36} height={36} className="rounded-lg" />
           <div className="flex flex-col">
@@ -710,11 +713,11 @@ export function RemoteControlPage() {
           </div>
         </div>
         <span
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] ${
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-[#0f1117] ${
             isReallyOnline ? 'text-emerald-400' : 'text-gray-500'
           }`}
         >
-          {isReallyOnline ? <WifiIcon className="h-4 w-4" /> : <WifiOffIcon className="h-4 w-4" />}
+          {isReallyOnline ? <Wifi className="h-4 w-4" /> : <WifiOff className="h-4 w-4" />}
         </span>
       </header>
 
@@ -734,7 +737,7 @@ export function RemoteControlPage() {
       )}
 
       {state !== 'connected' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#12151c] px-6 py-16 text-center">
+        <div className={`flex flex-1 flex-col items-center justify-center gap-2 rounded-xl ${CONSOLE_SURFACE} px-6 py-16 text-center`}>
           <span className={`text-sm font-medium ${statusColorClass}`}>{statusLabel}</span>
         </div>
       )}
@@ -742,20 +745,20 @@ export function RemoteControlPage() {
       {state === 'connected' && (
         <div className="flex flex-1 flex-col gap-3">
           {/* 2. SELECCIÓN DE GUION */}
-          <section className="rounded-xl border border-white/10 bg-[#12151c] p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Guion actual</p>
+          <section className={`rounded-xl ${CONSOLE_SURFACE} p-3`}>
+            <p className={`mb-2 text-[11px] font-semibold tracking-wider text-gray-500 uppercase ${FONT_CONSOLE}`}>Guion actual</p>
             <button
               type="button"
               disabled={controlsDisabled || !scriptList}
               onClick={() => setScriptListOpen((v) => !v)}
-              className="flex w-full items-center gap-2.5 rounded-lg border border-white/10 bg-[#0f1117] px-3 py-2.5 text-left transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex w-full items-center gap-2.5 rounded-xl border border-white/[0.08] bg-[#0f1117] px-3 py-2.5 text-left transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <FileTextIcon className={`h-4 w-4 shrink-0 ${TEXT_MUTED}`} />
-              <span className={`flex-1 truncate text-sm text-gray-100 ${FONT_DISPLAY}`}>{session?.scriptTitle || 'Sin guion'}</span>
+              <FileText className="h-4 w-4 shrink-0 text-gray-500" />
+              <span className={`flex-1 truncate text-sm text-gray-100 ${FONT_CONSOLE}`}>{session?.scriptTitle || 'Sin guion'}</span>
               {scriptListOpen ? (
-                <ChevronUpIcon className="h-4 w-4 shrink-0 text-gray-400" />
+                <ChevronUp className="h-4 w-4 shrink-0 text-gray-400" />
               ) : (
-                <ChevronDownIcon className="h-4 w-4 shrink-0 text-gray-400" />
+                <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
               )}
             </button>
 
@@ -763,7 +766,7 @@ export function RemoteControlPage() {
                 overlay): al abrirse empuja el resto de los controles hacia
                 abajo en vez de taparlos, y siguen alcanzables con scroll. */}
             {scriptListOpen && scriptList && (
-              <div className="mt-2 max-h-72 overflow-y-auto rounded-lg border border-white/10 bg-[#0f1117] p-2">
+              <div className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-white/[0.08] bg-[#0f1117] p-2">
                 {scriptList.every((folder) => folder.scripts.length === 0) ? (
                   <p className="p-3 text-center text-sm text-gray-500">No hay guiones guardados.</p>
                 ) : (
@@ -792,7 +795,7 @@ export function RemoteControlPage() {
                                     s.id === currentScriptId ? 'bg-accent' : 'bg-transparent'
                                   }`}
                                 />
-                                <span className={`truncate ${FONT_DISPLAY}`}>{s.title}</span>
+                                <span className={`truncate ${FONT_CONSOLE}`}>{s.title}</span>
                               </button>
                             ))}
                           </div>
@@ -805,11 +808,11 @@ export function RemoteControlPage() {
           </section>
 
           {/* 3. ESTADO Y PROGRESO */}
-          <section className="rounded-xl border border-white/10 bg-[#12151c] p-4 text-center">
-            <p className={`truncate text-[11px] font-semibold uppercase tracking-wider text-gray-500 ${FONT_DISPLAY}`}>
+          <section className={`rounded-xl ${CONSOLE_SURFACE} p-4 text-center`}>
+            <p className={`truncate text-[11px] font-semibold tracking-wider text-gray-500 uppercase ${FONT_CONSOLE}`}>
               {session?.scriptTitle || '—'}
             </p>
-            <p className="mt-1 text-2xl font-semibold text-gray-100">{STATUS_LABELS[engineStatus] ?? engineStatus}</p>
+            <p className={`mt-1 text-2xl font-bold text-gray-100 ${FONT_CONSOLE}`}>{STATUS_LABELS[engineStatus] ?? engineStatus}</p>
 
             <div className="mt-4">
               {/* Zona táctil alta (~44px, h-11) sobre una barra visual fina —
@@ -850,16 +853,16 @@ export function RemoteControlPage() {
               disponibles a los lados. Mismos handlers/comandos de siempre
               (seekBackHold/handlePlayPause/seekForwardHold), solo cambia el
               ícono y el tamaño. */}
-          <section className="rounded-xl border border-white/10 bg-[#12151c] p-4">
+          <section className={`rounded-xl ${CONSOLE_SURFACE} p-4`}>
             <div className="flex items-center justify-center gap-4">
               <button
                 type="button"
                 disabled={controlsDisabled}
                 aria-label="Retroceder"
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                 {...seekBackHold}
               >
-                <RewindIcon className="h-5 w-5" />
+                <Rewind className="h-5 w-5" />
               </button>
               <button
                 type="button"
@@ -868,35 +871,47 @@ export function RemoteControlPage() {
                 aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
                 className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-full ${ACCENT_BG} ${ON_ACCENT} ${PLAY_BUTTON_GLOW} transition-transform ${ACCENT_BG_HOVER} active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none`}
               >
-                {isPlaying ? <PauseIcon className="h-8 w-8" /> : <PlayIcon className="ml-1 h-8 w-8" />}
+                {isPlaying ? (
+                  <Pause className="h-8 w-8" fill="currentColor" aria-hidden="true" />
+                ) : (
+                  <Play className="ml-1 h-8 w-8" fill="currentColor" aria-hidden="true" />
+                )}
               </button>
               <button
                 type="button"
                 disabled={controlsDisabled}
                 aria-label="Avanzar"
-                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                 {...seekForwardHold}
               >
-                <FastForwardIcon className="h-5 w-5" />
+                <FastForward className="h-5 w-5" />
               </button>
             </div>
           </section>
 
-          {/* 5. TEMPO */}
-          <section className="rounded-xl border border-white/10 bg-[#12151c] p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-gray-500">Tempo</p>
+          {/* 5. TEMPO — misma "tarjeta de instrumento" que Velocidad en el
+              Teleprompter (ícono + etiqueta, número grande) pero el
+              CONTROL sigue siendo el mismo de siempre: botones ±/hold-repeat
+              y tocar el número para escribirlo a mano. Nada de esto se
+              convirtió en slider — un slider cambiaría el gesto (arrastrar
+              en vez de tocar), que es justo lo que no había que tocar. */}
+          <section className={`rounded-xl ${CONSOLE_SURFACE} p-3`}>
+            <p className={`mb-2 flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-gray-500 uppercase ${FONT_CONSOLE}`}>
+              <Gauge className="h-3.5 w-3.5" aria-hidden="true" />
+              Tempo
+            </p>
             <div className="flex items-center justify-between gap-2">
               <button
                 type="button"
                 disabled={controlsDisabled}
                 aria-label="Disminuir tempo"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                 onPointerUp={() => handleSpeedButtonRelease(speedDownHold)}
                 onPointerCancel={() => handleSpeedButtonRelease(speedDownHold)}
                 onPointerLeave={() => handleSpeedButtonRelease(speedDownHold)}
                 onPointerDown={speedDownHold.onPointerDown}
               >
-                <MinusIcon className="h-4 w-4" />
+                <Minus className="h-4 w-4" />
               </button>
 
               {editingSpeed ? (
@@ -911,7 +926,7 @@ export function RemoteControlPage() {
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') e.currentTarget.blur()
                   }}
-                  className="w-20 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-center text-lg text-gray-100"
+                  className={`w-20 rounded border border-white/[0.08] bg-[#0f1117] px-2 py-1 text-center text-xl font-bold text-gray-100 ${FONT_CONSOLE}`}
                 />
               ) : (
                 <button
@@ -920,10 +935,10 @@ export function RemoteControlPage() {
                   onClick={openSpeedEditor}
                   className="flex flex-1 flex-col items-center disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <span className="text-lg font-semibold tabular-nums text-gray-100">
+                  <span className={`text-xl leading-none font-bold text-gray-100 tabular-nums ${FONT_CONSOLE}`}>
                     {shownWpm} <span className="text-xs font-normal text-gray-500">BPM</span>
                   </span>
-                  <span className="text-[10px] text-gray-500">Toca para escribir</span>
+                  <span className="mt-1 text-[10px] text-gray-500">Toca para escribir</span>
                 </button>
               )}
 
@@ -931,13 +946,13 @@ export function RemoteControlPage() {
                 type="button"
                 disabled={controlsDisabled}
                 aria-label="Aumentar tempo"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-[#0f1117] text-gray-200 transition-transform hover:bg-white/5 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                 onPointerUp={() => handleSpeedButtonRelease(speedUpHold)}
                 onPointerCancel={() => handleSpeedButtonRelease(speedUpHold)}
                 onPointerLeave={() => handleSpeedButtonRelease(speedUpHold)}
                 onPointerDown={speedUpHold.onPointerDown}
               >
-                <PlusIcon className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
               </button>
             </div>
           </section>
@@ -949,14 +964,15 @@ export function RemoteControlPage() {
               solo toque (el host los confirma casi de inmediato, sin
               throttle). Ninguno de esos handlers cambia acá, solo el
               plegado/desplegado del panel que los contiene. */}
-          <section className="rounded-xl border border-white/10 bg-[#12151c] p-3">
+          <section className={`rounded-xl ${CONSOLE_SURFACE} p-3`}>
             <button
               type="button"
               onClick={() => setSettingsOpen((v) => !v)}
               className="flex w-full items-center justify-between gap-2 text-left"
             >
               <span className="flex-1">
-                <span className="block text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                <span className={`flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-gray-500 uppercase ${FONT_CONSOLE}`}>
+                  <Settings className="h-3.5 w-3.5" aria-hidden="true" />
                   Ajustes de pantalla
                 </span>
                 {!settingsOpen && (
@@ -966,9 +982,9 @@ export function RemoteControlPage() {
                 )}
               </span>
               {settingsOpen ? (
-                <ChevronUpIcon className="h-4 w-4 shrink-0 text-gray-400" />
+                <ChevronUp className="h-4 w-4 shrink-0 text-gray-400" />
               ) : (
-                <ChevronDownIcon className="h-4 w-4 shrink-0 text-gray-400" />
+                <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" />
               )}
             </button>
 
@@ -990,7 +1006,7 @@ export function RemoteControlPage() {
 
                 <div>
                   <p className="mb-1 text-xs text-gray-400">Alineación</p>
-                  <div className="flex gap-1 rounded-lg border border-white/10 bg-[#0f1117] p-1">
+                  <div className="flex gap-1 rounded-xl border border-white/[0.08] bg-[#0f1117] p-1">
                     {TEXT_ALIGN_OPTIONS.map(([value, label]) => (
                       <button
                         key={value}
@@ -1011,7 +1027,7 @@ export function RemoteControlPage() {
 
                 <div>
                   <p className="mb-1 text-xs text-gray-400">Espejo</p>
-                  <div className="flex gap-1 rounded-lg border border-white/10 bg-[#0f1117] p-1">
+                  <div className="flex gap-1 rounded-xl border border-white/[0.08] bg-[#0f1117] p-1">
                     {MIRROR_OPTIONS.map(([value, label]) => {
                       const MirrorIcon = MIRROR_ICONS[value]
                       return (
@@ -1068,9 +1084,9 @@ export function RemoteControlPage() {
             type="button"
             onClick={handleReset}
             disabled={controlsDisabled}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#12151c] py-3 text-sm font-medium text-gray-400 transition-colors hover:bg-white/5 hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-40"
+            className={`flex w-full items-center justify-center gap-2 rounded-xl ${CONSOLE_SURFACE} py-3 text-[13px] font-medium text-gray-400 transition-colors hover:bg-white/[0.06] hover:text-gray-200 disabled:cursor-not-allowed disabled:opacity-40 ${FONT_CONSOLE}`}
           >
-            <RotateCcwIcon className="h-4 w-4" />
+            <RotateCcw className="h-4 w-4" />
             Reiniciar
           </button>
         </div>

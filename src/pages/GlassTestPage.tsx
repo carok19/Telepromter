@@ -89,6 +89,8 @@ export function GlassTestPage() {
         {settings.readingZone.enabled && (
           <SignalIndicator
             center={settings.readingZone.center}
+            maxWidth={settings.maxWidth}
+            offsetX={settings.offsetX}
             onChange={(center) => handleChange({ readingZone: { ...settings.readingZone, center } })}
           />
         )}

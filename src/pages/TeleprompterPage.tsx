@@ -52,6 +52,7 @@ import {
 import { usePlayerStore } from '../stores/playerStore'
 import { useProfilesStore } from '../stores/profilesStore'
 import { useRemoteStore } from '../stores/remoteStore'
+import { CONSOLE_BUTTON, CONSOLE_BUTTON_ACTIVE, CONSOLE_SURFACE, FONT_CONSOLE } from '../styles/consoleTokens'
 import { ACCENT_BG, ACCENT_BG_HOVER, FONT_DISPLAY, ON_ACCENT } from '../styles/tokens'
 
 // Recuerda el último perfil elegido para el teleprompter entre sesiones. Es
@@ -65,27 +66,6 @@ const LAST_PROFILE_STORAGE_KEY = 'robress:teleprompterProfileId'
 // sistema de siempre para que cambiar la fuente de la app nunca mueva un
 // solo píxel de lo que el usuario ya calibró detrás del vidrio.
 const LEGACY_SYSTEM_FONT = "system-ui, 'Segoe UI', Roboto, sans-serif"
-
-// Identidad visual de la CONSOLA del Teleprompter (F/Rediseño visual):
-// 'Archivo' (ver index.css) reemplaza a Fredoka/Inter SOLO en el chrome de
-// esta pantalla (header + control deck del footer) — nunca en el texto del
-// guion ni en Prueba de vidrio, que siguen fuera de esto (ver
-// LEGACY_SYSTEM_FONT arriba). Buscado a propósito: Fredoka es redondeada y
-// juguetona, pensada para el resto de la app (Biblioteca, Editor); acá se
-// pidió una sensación de consola de producción profesional, no de marca.
-const FONT_CONSOLE = 'font-console'
-
-// Superficie de un control de la consola (Reiniciar/Señal/Margen/Velocidad/
-// Configuración/Control remoto): un gris carbón apenas más claro que el
-// fondo casi negro de la pantalla, con borde extremadamente sutil — nunca
-// el mismo tono plano de una tarjeta de la app (ver SURFACE en tokens.ts),
-// que se vería como "dashboard genérico" en vez de hardware.
-const CONSOLE_SURFACE = 'border border-white/[0.08] bg-[#141519]'
-const CONSOLE_BUTTON = `flex items-center justify-center gap-1 rounded-xl ${CONSOLE_SURFACE} px-2.5 py-2.5 text-[13px] font-medium text-gray-200 transition-colors hover:bg-white/[0.06] active:bg-white/10`
-// Estado "prendido" (Señal/Margen activos): mismo ámbar de acento que Play,
-// pero como superficie tenue (15%) en vez de rellena — se nota que está
-// activo sin competir con la acción principal.
-const CONSOLE_BUTTON_ACTIVE = `flex items-center justify-center gap-1 rounded-xl border border-accent/40 bg-accent/15 px-2.5 py-2.5 text-[13px] font-medium text-accent transition-colors`
 
 // F8.3: cota máxima de cuánto se demora en publicar el progreso al backend
 // de control remoto mientras se reproduce (los cambios de estado discretos
@@ -1135,6 +1115,8 @@ function TeleprompterSession({
         {effectiveSettings.readingZone.enabled && !marginsGuidesVisible && (
           <SignalIndicator
             center={effectiveSettings.readingZone.center}
+            maxWidth={effectiveSettings.maxWidth}
+            offsetX={effectiveSettings.offsetX}
             onChange={(center) => handleLiveSettingsChange({ readingZone: { ...effectiveSettings.readingZone, center } })}
             onDraggingChange={setSignalDragging}
           />

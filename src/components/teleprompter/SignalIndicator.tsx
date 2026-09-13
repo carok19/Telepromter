@@ -1,7 +1,9 @@
-// Indicador de Señal: un triángulo fijo al borde izquierdo que marca la
-// altura de lectura. Reemplaza a las dos líneas horizontales de la Zona de
-// lectura original — referencia funcional: un triángulo que se arrastra
-// verticalmente en el borde, sin entrar a ningún modo.
+// Indicador de Señal: un triángulo que marca la altura de lectura, pegado
+// al borde IZQUIERDO DE LA COLUMNA DE TEXTO (no de la pantalla — ver el
+// comentario de `left` más abajo, y maxWidth/offsetX en las props).
+// Reemplaza a las dos líneas horizontales de la Zona de lectura original —
+// referencia funcional: un triángulo que se arrastra verticalmente en el
+// borde, sin entrar a ningún modo.
 //
 // A pedido explícito, se arrastra DIRECTO mientras está activado, sin el
 // patrón de "modo de ajuste con ✓/✕" que sí conserva MarginGuides: más
@@ -32,6 +34,13 @@ import { CALIBRATION_RANGES } from '../../engine/calibrationEngine'
 
 interface SignalIndicatorProps {
   center: number
+  // Ancho de la columna de texto y su corrimiento horizontal — los mismos
+  // valores que ya usa MarginGuides para posicionar las barras — para que
+  // el triángulo siga al borde IZQUIERDO REAL del texto en vez de quedar
+  // fijo contra el borde de la pantalla (ver el comentario de `left` más
+  // abajo).
+  maxWidth: number
+  offsetX: number
   onChange: (center: number) => void
   // El Teleprompter lo usa para ocultar header/footer por completo mientras
   // dura el arrastre (misma idea que `adjusting` en SettingsSheet: solo
@@ -39,11 +48,16 @@ interface SignalIndicatorProps {
   onDraggingChange?: (dragging: boolean) => void
 }
 
+// Mismo gap que tenía el triángulo contra el borde de la pantalla cuando
+// vivía fijo en `left-[10px]` — se conserva como la separación mínima
+// contra CUALQUIER borde (pantalla o texto), ver GAP_PX más abajo.
+const SIGNAL_GAP_PX = 10
+
 function stopPropagation(e: TouchEvent | MouseEvent) {
   e.stopPropagation()
 }
 
-export function SignalIndicator({ center, onChange, onDraggingChange }: SignalIndicatorProps) {
+export function SignalIndicator({ center, maxWidth, offsetX, onChange, onDraggingChange }: SignalIndicatorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState(false)
 
@@ -103,15 +117,30 @@ export function SignalIndicator({ center, onChange, onDraggingChange }: SignalIn
         onTouchStart={stopPropagation}
         onMouseMove={stopPropagation}
         onClick={stopPropagation}
-        style={{ top: `${center}%` }}
+        style={{
+          top: `${center}%`,
+          // El borde izquierdo real de la columna de texto es el mismo
+          // cálculo que ya usa MarginGuides para sus barras: centrado al
+          // 50% del contenedor, corrido por offsetX (px) y angosto por
+          // maxWidth/2 (%). Colocar el triángulo a SIGNAL_GAP_PX de ESE
+          // borde (en vez de un left-[10px] fijo contra la pantalla) es lo
+          // que lo mantiene pegado al texto sin importar el margen ni el
+          // ancho de pantalla — antes, con un margen angosto (texto
+          // ocupando casi toda la pantalla en una tablet/escritorio ancho),
+          // el triángulo se quedaba clavado en el borde de la pantalla,
+          // lejísimos del texto real.
+          // `max()` (no un simple calc): si el margen es mínimo (texto muy
+          // ancho, borde izquierdo casi pegado a la pantalla, o incluso
+          // "negativo" con offsetX), el resultado de restar el gap podría
+          // quedar en 0 o negativo — max() lo sujeta a SIGNAL_GAP_PX contra
+          // la pantalla misma, que es exactamente la separación mínima que
+          // ya tenía antes.
+          left: `max(${SIGNAL_GAP_PX}px, calc(50% + ${offsetX}px - ${maxWidth / 2}% - ${SIGNAL_GAP_PX}px))`,
+        }}
         // Zona de agarre generosa — bastante más grande que la forma
         // visible, que se mantiene discreta a propósito (se refleja en el
-        // vidrio). `left-[10px]` (no 0): deja un margen fijo contra el
-        // borde de la pantalla, para no quedar pegado al texto — el propio
-        // margen del texto (maxWidth/offsetX) varía según la calibración,
-        // así que un valor fijo es lo único que garantiza separación en
-        // cualquier configuración razonable.
-        className="absolute left-[10px] -translate-y-1/2 touch-none py-9 pr-9"
+        // vidrio).
+        className="absolute -translate-y-1/2 touch-none py-9 pr-9"
       >
         {/* Solo el triángulo (sin la barra que tenía antes) — se agranda
             mientras se arrastra, para que quede claro qué se está
