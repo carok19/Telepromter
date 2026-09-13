@@ -1,5 +1,5 @@
 // Elegir perfil / guardar en el perfil elegido / guardar como uno nuevo —
-// compartido por Prueba de vidrio y por el cajón de Ajustes del
+// compartido por Prueba de vidrio y por la hoja de Ajustes del
 // Teleprompter, que ya tenían casi la misma UI duplicada dos veces con
 // pequeñas diferencias de comportamiento por pantalla:
 //

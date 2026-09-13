@@ -14,8 +14,7 @@ import { CalibrationSettingsPanel } from '../components/calibration/CalibrationS
 import { ProfileControls } from '../components/calibration/ProfileControls'
 import { MarginGuides } from '../components/teleprompter/MarginGuides'
 import { SignalIndicator } from '../components/teleprompter/SignalIndicator'
-import { SettingsDrawer } from '../components/teleprompter/SettingsDrawer'
-import { SettingsTab } from '../components/teleprompter/SettingsTab'
+import { SettingsSheet } from '../components/teleprompter/SettingsSheet'
 import { PairingModal } from '../components/remote/PairingModal'
 import { PromptDialog } from '../components/shared/PromptDialog'
 import { db, type FolderRecord, type ScriptRecord } from '../db/db'
@@ -923,16 +922,16 @@ function TeleprompterSession({
       ref={rootRef}
       className={`relative h-dvh w-full overflow-hidden bg-[#0b0c10] ${idle ? 'cursor-none' : ''}`}
     >
-      {/* Pestaña de Ajustes: pegada al borde DERECHO, siempre visible (no se
-          suma al OR-chain de controlsVisible: a diferencia del resto de los
-          controles, que se ocultan para no distraer de la lectura, esta es
-          la única forma de volver a abrir el panel — si se ocultara con los
-          demás no habría manera de reabrirlo sin antes despertar el resto
-          de los controles). El borde izquierdo queda libre para el
-          indicador de Señal (ver más abajo). Se oculta solo durante el modo
-          de ajuste de márgenes, para no competir con la barra derecha. */}
-      <SettingsTab open={settingsPanelOpen} onClick={() => setSettingsPanelOpen((v) => !v)} hidden={editMode !== 'none'} />
-      <SettingsDrawer open={settingsPanelOpen} interactive={controlsInteractive} onClose={() => setSettingsPanelOpen(false)}>
+      {/* Hoja de Ajustes: se abre desde el botón de engranaje del footer (ver
+          más abajo, junto a Play/Reiniciar/Señal/Margen) — ya no hay una
+          pestaña fija aparte, es un botón más del footer, con las mismas
+          reglas de ocultado automático y toque fantasma que el resto. */}
+      <SettingsSheet
+        open={settingsPanelOpen}
+        interactive={controlsInteractive}
+        onClose={() => setSettingsPanelOpen(false)}
+        reduceEffects={status === 'playing'}
+      >
         <ProfileControls
           profiles={profiles}
           selectedProfileId={selectedProfileId}
@@ -947,7 +946,7 @@ function TeleprompterSession({
           collapsible
           onAdjustMargins={enterMarginsEdit}
         />
-      </SettingsDrawer>
+      </SettingsSheet>
 
       {/* Overlay superior: header + aviso de pausa por marcador, ambos
           posicionados de forma absoluta (no en el flujo flex) para que
@@ -1180,13 +1179,27 @@ function TeleprompterSession({
                 </button>
                 {/* Acceso de un toque al modo márgenes: mismo enterMarginsEdit
                     que el botón "Ajustar arrastrando…" del panel, pero sin
-                    tener que abrir el cajón primero. */}
+                    tener que abrir la hoja de ajustes primero. */}
                 <button
                   type="button"
                   onClick={enterMarginsEdit}
                   className="rounded-md border border-white/10 px-3 py-2 text-sm text-gray-300 hover:bg-white/5"
                 >
                   Margen
+                </button>
+                {/* Engranaje: abre la hoja de Configuración rápida (ver
+                    SettingsSheet) con el resto de los ajustes — reemplaza a
+                    la pestaña fija que antes vivía en el borde derecho. Un
+                    botón más del footer: se oculta y protege contra el
+                    toque fantasma exactamente igual que sus vecinos. */}
+                <button
+                  type="button"
+                  onClick={() => setSettingsPanelOpen((v) => !v)}
+                  aria-label="Ajustes"
+                  aria-expanded={settingsPanelOpen}
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-gray-300 hover:bg-white/5"
+                >
+                  ⚙
                 </button>
                 <button
                   type="button"

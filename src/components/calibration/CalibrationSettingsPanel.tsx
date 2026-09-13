@@ -1,10 +1,10 @@
-// Panel de campos de calibración, compartido por Prueba de vidrio y por el
-// cajón de Ajustes del Teleprompter (antes eran dos componentes separados,
+// Panel de campos de calibración, compartido por Prueba de vidrio y por la
+// hoja de Ajustes del Teleprompter (antes eran dos componentes separados,
 // CalibrationPanel y LiveSettingsPanel, con el segundo exponiendo menos
 // campos que el primero — quedaban desincronizados a propósito). Ahora es
 // uno solo: mismos campos, mismo comportamiento, en las dos pantallas.
 //
-// `collapsible`: en el cajón angosto del Teleprompter las secciones se
+// `collapsible`: en la hoja angosta del Teleprompter las secciones se
 // pliegan (una a la vez) para no obligar a un scroll eterno en celular. En
 // Prueba de vidrio, que ya tiene un panel lateral de alto completo con su
 // propio scroll y nunca se quejaron de eso, quedan todas abiertas (default),

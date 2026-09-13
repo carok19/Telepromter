@@ -98,19 +98,43 @@ export function SignalIndicator({ center, onChange }: SignalIndicatorProps) {
         onMouseMove={stopPropagation}
         onClick={stopPropagation}
         style={{ top: `${center}%` }}
-        className="absolute left-0 -translate-y-1/2 touch-none py-4 pr-4"
+        // Zona de agarre generosa (py-7 pr-8 ≈ 56px de alto, de sobra para un
+        // dedo) — bastante más grande que la forma visible, que se mantiene
+        // discreta a propósito (se refleja en el vidrio).
+        className="absolute left-0 -translate-y-1/2 touch-none py-7 pr-8"
       >
+        {/* El grupo entero (triángulo + barra) se agranda mientras se
+            arrastra, para que quede claro qué se está moviendo, y vuelve a
+            su tamaño normal al soltar con una transición suave.
+            transformOrigin en el borde izquierdo para que crezca HACIA el
+            texto, no hacia afuera de la pantalla. */}
         <div
           aria-hidden="true"
-          style={{
-            width: 0,
-            height: 0,
-            borderTop: '6px solid transparent',
-            borderBottom: '6px solid transparent',
-            borderLeft: '9px solid rgba(150,150,150,0.75)',
-            filter: 'drop-shadow(0 0 1px rgba(0,0,0,0.6)) drop-shadow(0 0 1px rgba(255,255,255,0.3))',
-          }}
-        />
+          className="flex items-center transition-transform duration-150 ease-out"
+          style={{ transform: dragging ? 'scale(1.35)' : 'scale(1)', transformOrigin: 'left center' }}
+        >
+          <div
+            style={{
+              width: 0,
+              height: 0,
+              borderTop: '11px solid transparent',
+              borderBottom: '11px solid transparent',
+              borderLeft: '15px solid rgba(165,165,165,0.85)',
+              filter: 'drop-shadow(0 0 1.5px rgba(0,0,0,0.65)) drop-shadow(0 0 1.5px rgba(255,255,255,0.35))',
+            }}
+          />
+          {/* Barra corta hacia el texto: junto con el triángulo, deja más
+              claro que es un asa arrastrable y no solo una marca decorativa. */}
+          <div
+            style={{
+              width: '16px',
+              height: '4px',
+              marginLeft: '-1px',
+              background: 'rgba(165,165,165,0.85)',
+              filter: 'drop-shadow(0 0 1.5px rgba(0,0,0,0.65)) drop-shadow(0 0 1.5px rgba(255,255,255,0.35))',
+            }}
+          />
+        </div>
       </div>
     </div>
   )
