@@ -10,11 +10,14 @@
 // propio scroll y nunca se quejaron de eso, quedan todas abiertas (default),
 // para no arriesgar una regresión ahí por un problema que no existía.
 //
-// `onAdjustMargins`/`onAdjustReadingZone` son opcionales: solo el
-// Teleprompter tiene un modo de ajuste directo (arrastrar sobre el propio
-// texto) al que estos botones entran — en Prueba de vidrio, que no tiene ese
-// modo, sencillamente no se pasan y los botones no se renderizan. Un solo
-// componente, sin bifurcar su lógica interna por pantalla.
+// `onAdjustMargins` es opcional: solo el Teleprompter tiene un modo de
+// ajuste directo de márgenes (arrastrar sobre el propio texto) al que este
+// botón entra — en Prueba de vidrio, que no tiene ese modo, sencillamente
+// no se pasa y el botón no se renderiza. El indicador de Señal no tiene un
+// botón equivalente: se arrastra directo desde la pantalla, sin pasar por
+// este panel (acá solo queda el toggle y el slider de posición como
+// alternativa fina). Un solo componente, sin bifurcar su lógica interna por
+// pantalla.
 import { useState, type ReactNode } from 'react'
 import {
   CALIBRATION_RANGES,
@@ -33,7 +36,6 @@ interface CalibrationSettingsPanelProps {
   onChange: (patch: Partial<CalibrationSettings>) => void
   collapsible?: boolean
   onAdjustMargins?: () => void
-  onAdjustReadingZone?: () => void
 }
 
 const TEXT_ALIGN_OPTIONS: Array<[TextAlign, string]> = [
@@ -86,7 +88,6 @@ export function CalibrationSettingsPanel({
   onChange,
   collapsible = false,
   onAdjustMargins,
-  onAdjustReadingZone,
 }: CalibrationSettingsPanelProps) {
   function updateGhost(patch: Partial<GhostCompensation>) {
     onChange({ ghostCompensation: { ...settings.ghostCompensation, ...patch } })
@@ -163,7 +164,7 @@ export function CalibrationSettingsPanel({
         </label>
       </Section>
 
-      <Section title="Posición y zona de lectura" collapsible={collapsible} defaultOpen={false}>
+      <Section title="Posición" collapsible={collapsible} defaultOpen={false}>
         <Slider
           label="Desplazamiento X"
           value={settings.offsetX}
@@ -176,8 +177,11 @@ export function CalibrationSettingsPanel({
           {...CALIBRATION_RANGES.offsetY}
           onChange={(offsetY) => onChange({ offsetY })}
         />
-        <div className="flex items-center justify-between gap-2 border-t border-white/10 pt-3">
-          <span className="text-xs text-gray-400">Zona de lectura</span>
+      </Section>
+
+      <Section title="Señal" collapsible={collapsible} defaultOpen={false}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs text-gray-400">Indicador de señal</span>
           <button
             type="button"
             onClick={() => onChange({ readingZone: { ...settings.readingZone, enabled: !settings.readingZone.enabled } })}
@@ -194,17 +198,9 @@ export function CalibrationSettingsPanel({
           {...CALIBRATION_RANGES.readingZoneCenter}
           onChange={(center) => onChange({ readingZone: { ...settings.readingZone, center } })}
         />
-        <Slider
-          label="Alto de la franja"
-          value={settings.readingZone.height}
-          {...CALIBRATION_RANGES.readingZoneHeight}
-          onChange={(height) => onChange({ readingZone: { ...settings.readingZone, height } })}
-        />
-        {onAdjustReadingZone && (
-          <button type="button" onClick={onAdjustReadingZone} className="self-start text-[11px] text-gray-400 hover:text-gray-100">
-            Ajustar arrastrando la zona de lectura…
-          </button>
-        )}
+        <p className="text-[11px] leading-snug text-gray-500">
+          También se puede arrastrar directamente el triángulo en el borde de la pantalla, sin abrir este panel.
+        </p>
       </Section>
 
       <Section title="Imagen y color" collapsible={collapsible} defaultOpen={false}>

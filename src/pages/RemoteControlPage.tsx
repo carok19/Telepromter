@@ -625,14 +625,6 @@ export function RemoteControlPage() {
     calibration?.readingZoneCenter ?? DEFAULT_CALIBRATION.readingZone.center,
     sendCalibration,
   )
-  const readingZoneHeightStepper = useOptimisticCalibrationStepper(
-    'readingZoneHeight',
-    CALIBRATION_RANGES.readingZoneHeight.step,
-    0,
-    { min: CALIBRATION_RANGES.readingZoneHeight.min, max: CALIBRATION_RANGES.readingZoneHeight.max },
-    calibration?.readingZoneHeight ?? DEFAULT_CALIBRATION.readingZone.height,
-    sendCalibration,
-  )
   // readingZoneEnabled viaja como 0|1 (ver el comentario de
   // CALIBRATION_PARAMS en remoteSession.ts) — acá se lee/escribe como
   // boolean, la conversión queda contenida en este único punto.
@@ -1044,7 +1036,7 @@ export function RemoteControlPage() {
 
                 <div>
                   <div className="mb-1 flex items-center justify-between">
-                    <p className="text-xs text-gray-400">Zona de lectura</p>
+                    <p className="text-xs text-gray-400">Señal</p>
                     <button
                       type="button"
                       disabled={controlsDisabled}
@@ -1062,12 +1054,6 @@ export function RemoteControlPage() {
                       unit="%"
                       disabled={controlsDisabled}
                       stepper={readingZoneCenterStepper}
-                    />
-                    <CalibrationStepperRow
-                      label="Alto de la franja"
-                      unit="%"
-                      disabled={controlsDisabled}
-                      stepper={readingZoneHeightStepper}
                     />
                   </div>
                 </div>

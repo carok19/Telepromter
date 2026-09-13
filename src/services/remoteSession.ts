@@ -128,13 +128,13 @@ export interface RemoteCommand {
 // ---------------------------------------------------------------------
 // F8.4 parte B: ajustes de calibración en vivo desde el remoto.
 // ---------------------------------------------------------------------
-// readingZoneEnabled/Center/Height: la Zona de lectura vive en
+// readingZoneEnabled/Center: el indicador de Señal vive en
 // CalibrationSettings como un objeto anidado (`readingZone: {enabled,
-// center, height}`), pero el protocolo remoto (como el resto de estos
-// params) es plano — quien aplica el comando (TeleprompterPage) sabe
-// mapear estos tres a `readingZone.*`. readingZoneEnabled viaja como
-// número (0|1), no boolean: `RemoteCommand.value` solo admite
-// `number | string`, igual que el resto de los params de acá.
+// center}`), pero el protocolo remoto (como el resto de estos params) es
+// plano — quien aplica el comando (TeleprompterPage) sabe mapear estos dos
+// a `readingZone.*`. readingZoneEnabled viaja como número (0|1), no
+// boolean: `RemoteCommand.value` solo admite `number | string`, igual que
+// el resto de los params de acá.
 const CALIBRATION_PARAMS = [
   'fontSize',
   'maxWidth',
@@ -143,7 +143,6 @@ const CALIBRATION_PARAMS = [
   'textAlign',
   'readingZoneEnabled',
   'readingZoneCenter',
-  'readingZoneHeight',
 ] as const
 export type CalibrationParam = (typeof CALIBRATION_PARAMS)[number]
 
@@ -161,7 +160,6 @@ export interface RemoteCalibration {
   mirror: MirrorMode
   readingZoneEnabled: boolean
   readingZoneCenter: number
-  readingZoneHeight: number
   updatedAt: number
 }
 
@@ -194,7 +192,7 @@ export function validateCalibrationCommand(
   if (validParam === 'readingZoneEnabled') {
     return value === 0 || value === 1 ? { param: validParam, value } : null
   }
-  // Numérico: fontSize | maxWidth | lineHeight | readingZoneCenter | readingZoneHeight.
+  // Numérico: fontSize | maxWidth | lineHeight | readingZoneCenter.
   if (typeof value !== 'number' || !Number.isFinite(value)) return null
   const range = CALIBRATION_RANGES[validParam]
   return { param: validParam, value: Math.min(range.max, Math.max(range.min, value)) }

@@ -9,12 +9,11 @@ import {
   getTextAlignOverrideCss,
   TEXT_ALIGN_OVERRIDE_CLASS,
   type CalibrationSettings,
-  type ReadingZone,
 } from '../engine/calibrationEngine'
 import { CalibrationSettingsPanel } from '../components/calibration/CalibrationSettingsPanel'
 import { ProfileControls } from '../components/calibration/ProfileControls'
 import { MarginGuides } from '../components/teleprompter/MarginGuides'
-import { ReadingZoneGuides } from '../components/teleprompter/ReadingZoneGuides'
+import { SignalIndicator } from '../components/teleprompter/SignalIndicator'
 import { SettingsDrawer } from '../components/teleprompter/SettingsDrawer'
 import { SettingsTab } from '../components/teleprompter/SettingsTab'
 import { PairingModal } from '../components/remote/PairingModal'
@@ -349,18 +348,19 @@ function TeleprompterSession({
   const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
   const [showSaveAsNewProfileDialog, setShowSaveAsNewProfileDialog] = useState(false)
-  // Modo de ajuste directo (márgenes / zona de lectura, ver MarginGuides y
-  // ReadingZoneGuides): se entra a propósito desde un botón del panel de
-  // Ajustes, nunca con un toque suelto sobre el texto. Mientras está
-  // activo, el footer deja de mostrar los controles de reproducción (✓/✕
-  // los reemplazan) y el ocultado automático queda suspendido (ver
-  // controlsVisible más abajo) — el modo en sí no pausa ni reanuda nada.
-  const [editMode, setEditMode] = useState<'none' | 'margins' | 'readingZone'>('none')
+  // Modo de ajuste directo de márgenes (ver MarginGuides): se entra a
+  // propósito desde un botón, nunca con un toque suelto sobre el texto.
+  // Mientras está activo, el footer deja de mostrar los controles de
+  // reproducción (✓/✕ los reemplazan) y el ocultado automático queda
+  // suspendido (ver controlsVisible más abajo) — el modo en sí no pausa ni
+  // reanuda nada. El indicador de Señal (SignalIndicator) NO tiene un modo
+  // equivalente a propósito: se arrastra directo en todo momento mientras
+  // está activado, sin este mecanismo.
+  const [editMode, setEditMode] = useState<'none' | 'margins'>('none')
   // Snapshot de ANTES de entrar al modo, para que ✕ pueda restaurarlo tal
   // cual — no alcanza con "no tocar nada mientras se arrastra", porque
   // arrastrar sí aplica en vivo (para ver el efecto mientras se ajusta).
   const preEditMaxWidthRef = useRef<number | null>(null)
-  const preEditReadingZoneRef = useRef<ReadingZone | null>(null)
   // B.1: se inicializa con el commandId YA VISTO (si `remoteSession` llega
   // con uno, porque este componente se está remontando tras un cambio de
   // guion con la sesión todavía viva) en vez de `null` — si no, el guard de
@@ -526,17 +526,6 @@ function TeleprompterSession({
     setEditMode('margins')
   }
 
-  // Modo zona de lectura: además de guardar el snapshot, la activa de
-  // inmediato (¿de qué serviría arrastrar algo invisible?) — si el usuario
-  // cancela, ✕ restaura también el `enabled` de antes, no solo la posición.
-  function enterReadingZoneEdit() {
-    const current = (liveSettings ?? DEFAULT_CALIBRATION).readingZone
-    preEditReadingZoneRef.current = current
-    handleLiveSettingsChange({ readingZone: { ...current, enabled: true } })
-    setSettingsPanelOpen(false)
-    setEditMode('readingZone')
-  }
-
   // ✓ aplica: el valor ya está aplicado en vivo (se ve mientras se
   // arrastra) — confirmar solo significa "salir del modo, quedarse con
   // esto". Igual que el resto de los ajustes en vivo, no se guarda en el
@@ -545,23 +534,22 @@ function TeleprompterSession({
     setEditMode('none')
   }
 
-  // ✕ vuelve al valor anterior: restaura el snapshot completo (incluido
-  // `enabled` en el caso de la zona de lectura) y sale del modo.
+  // ✕ vuelve al valor anterior: restaura el snapshot y sale del modo.
   function cancelEdit() {
     if (editMode === 'margins' && preEditMaxWidthRef.current != null) {
       handleLiveSettingsChange({ maxWidth: preEditMaxWidthRef.current })
-    } else if (editMode === 'readingZone' && preEditReadingZoneRef.current != null) {
-      handleLiveSettingsChange({ readingZone: preEditReadingZoneRef.current })
     }
     setEditMode('none')
   }
 
-  // Activar/desactivar la zona de lectura de un toque, sin entrar al panel
-  // — las guías se reflejan en el vidrio y puede que se quieran apagar a
-  // mitad de una grabación (a diferencia del modo de ajuste, esto NO
-  // suspende el ocultado automático ni congela los demás controles: es un
-  // botón más del footer, como Reiniciar o Ajustes).
-  function toggleReadingZoneEnabled() {
+  // Activar/desactivar el indicador de Señal de un toque, sin abrir el
+  // panel — el triángulo se refleja en el vidrio y puede que se quiera
+  // apagar a mitad de una grabación. A diferencia del modo márgenes, esto
+  // NO suspende el ocultado automático ni congela los demás controles: es
+  // un botón más del footer, como Reiniciar. Una vez activado, el
+  // indicador ya se puede arrastrar directamente (ver SignalIndicator) —
+  // no hace falta ningún paso más para ajustarlo.
+  function toggleSignalEnabled() {
     const current = (liveSettings ?? DEFAULT_CALIBRATION).readingZone
     handleLiveSettingsChange({ readingZone: { ...current, enabled: !current.enabled } })
   }
@@ -684,17 +672,15 @@ function TeleprompterSession({
       const validated = validateCalibrationCommand(command.param, command.value)
       if (validated) {
         const base = liveSettings ?? DEFAULT_CALIBRATION
-        // readingZoneEnabled/Center/Height son un caso especial: el
-        // protocolo remoto los trata como tres params planos (mismo
-        // criterio que fontSize/maxWidth/etc.), pero en CalibrationSettings
-        // viven anidados bajo `readingZone` — no alcanza con
-        // `{[validated.param]: validated.value}` para esos tres, crearía
-        // una clave suelta en vez de actualizar `readingZone.center`, por
+        // readingZoneEnabled/Center son un caso especial: el protocolo
+        // remoto los trata como dos params planos (mismo criterio que
+        // fontSize/maxWidth/etc.), pero en CalibrationSettings viven
+        // anidados bajo `readingZone` — no alcanza con
+        // `{[validated.param]: validated.value}` para esos dos, crearía una
+        // clave suelta en vez de actualizar `readingZone.center`, por
         // ejemplo.
         if (validated.param === 'readingZoneCenter') {
           applyLiveSettings({ ...base, readingZone: { ...base.readingZone, center: validated.value as number } })
-        } else if (validated.param === 'readingZoneHeight') {
-          applyLiveSettings({ ...base, readingZone: { ...base.readingZone, height: validated.value as number } })
         } else if (validated.param === 'readingZoneEnabled') {
           applyLiveSettings({ ...base, readingZone: { ...base.readingZone, enabled: validated.value === 1 } })
         } else {
@@ -830,7 +816,6 @@ function TeleprompterSession({
       mirror: settings.mirror,
       readingZoneEnabled: settings.readingZone.enabled,
       readingZoneCenter: settings.readingZone.center,
-      readingZoneHeight: settings.readingZone.height,
       updatedAt: Date.now(),
     })
   }, [remoteSessionId, remoteSession?.remoteConnected, liveSettings, publishCalibration])
@@ -938,14 +923,14 @@ function TeleprompterSession({
       ref={rootRef}
       className={`relative h-dvh w-full overflow-hidden bg-[#0b0c10] ${idle ? 'cursor-none' : ''}`}
     >
-      {/* Pestaña de Ajustes: pegada al borde izquierdo, siempre visible (no
-          se suma al OR-chain de controlsVisible: a diferencia del resto de
-          los controles, que se ocultan para no distraer de la lectura, esta
-          es la única forma de volver a abrir el panel — si se ocultara con
-          los demás no habría manera de reabrirlo sin antes despertar el
-          resto de los controles). Se oculta solo durante un modo de ajuste
-          directo (márgenes/zona de lectura), para no competir con la barra
-          de márgenes cuando queda cerca del borde. */}
+      {/* Pestaña de Ajustes: pegada al borde DERECHO, siempre visible (no se
+          suma al OR-chain de controlsVisible: a diferencia del resto de los
+          controles, que se ocultan para no distraer de la lectura, esta es
+          la única forma de volver a abrir el panel — si se ocultara con los
+          demás no habría manera de reabrirlo sin antes despertar el resto
+          de los controles). El borde izquierdo queda libre para el
+          indicador de Señal (ver más abajo). Se oculta solo durante el modo
+          de ajuste de márgenes, para no competir con la barra derecha. */}
       <SettingsTab open={settingsPanelOpen} onClick={() => setSettingsPanelOpen((v) => !v)} hidden={editMode !== 'none'} />
       <SettingsDrawer open={settingsPanelOpen} interactive={controlsInteractive} onClose={() => setSettingsPanelOpen(false)}>
         <ProfileControls
@@ -961,7 +946,6 @@ function TeleprompterSession({
           onChange={handleLiveSettingsChange}
           collapsible
           onAdjustMargins={enterMarginsEdit}
-          onAdjustReadingZone={enterReadingZoneEdit}
         />
       </SettingsDrawer>
 
@@ -1077,18 +1061,16 @@ function TeleprompterSession({
           </div>
         </div>
 
-        {/* Zona de lectura y márgenes: fuera del wrapper de arriba a
-            propósito (ver los comentarios de ReadingZoneGuides/MarginGuides)
-            — ninguna de las dos debe invertirse con el espejo ni oscurecerse
-            con el brillo/contraste calibrados. Pasiva (interactive=false)
-            fuera del modo de ajuste: se ve como referencia pero no responde
-            a ningún puntero, así que arrastrar el dedo sobre el texto para
-            otra cosa nunca la mueve por accidente. */}
-        {(effectiveSettings.readingZone.enabled || editMode === 'readingZone') && (
-          <ReadingZoneGuides
-            zone={effectiveSettings.readingZone}
-            onChange={(readingZone) => handleLiveSettingsChange({ readingZone })}
-            interactive={editMode === 'readingZone'}
+        {/* Indicador de Señal y márgenes: fuera del wrapper de arriba a
+            propósito (ver los comentarios de SignalIndicator/MarginGuides) —
+            ninguno de los dos debe invertirse con el espejo ni oscurecerse
+            con el brillo/contraste calibrados. El indicador se oculta durante
+            el modo márgenes (no compite con la barra derecha ni se puede
+            arrastrar por error mientras se ajustan los márgenes). */}
+        {effectiveSettings.readingZone.enabled && editMode !== 'margins' && (
+          <SignalIndicator
+            center={effectiveSettings.readingZone.center}
+            onChange={(center) => handleLiveSettingsChange({ readingZone: { ...effectiveSettings.readingZone, center } })}
           />
         )}
         {editMode === 'margins' && (
@@ -1135,9 +1117,7 @@ function TeleprompterSession({
             // ni siquiera se renderizan, así que literalmente no responden a
             // nada) mientras se arrastra. ✓/✕ son los únicos controles.
             <div className="flex w-full items-center justify-between gap-3">
-              <span className="text-sm font-medium text-gray-200">
-                {editMode === 'margins' ? 'Ajustando márgenes' : 'Ajustando zona de lectura'}
-              </span>
+              <span className="text-sm font-medium text-gray-200">Ajustando márgenes</span>
               <div className="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
@@ -1180,14 +1160,15 @@ function TeleprompterSession({
                 >
                   Reiniciar
                 </button>
-                {/* Toggle rápido de la Zona de lectura: no entra al panel ni
-                    a ningún modo de ajuste, solo prende/apaga las guías —
-                    puede que se quieran apagar a mitad de una grabación
-                    porque se reflejan en el vidrio (ver el comentario de
-                    toggleReadingZoneEnabled). */}
+                {/* Acceso de un toque al indicador de Señal: no entra a
+                    ningún panel ni modo de ajuste, solo prende/apaga el
+                    triángulo — una vez activado ya se puede arrastrar
+                    directo (ver SignalIndicator). Puede que se quiera apagar
+                    a mitad de una grabación porque se refleja en el vidrio
+                    (ver el comentario de toggleSignalEnabled). */}
                 <button
                   type="button"
-                  onClick={toggleReadingZoneEnabled}
+                  onClick={toggleSignalEnabled}
                   aria-pressed={effectiveSettings.readingZone.enabled}
                   className={`rounded-md px-3 py-2 text-sm transition-colors ${
                     effectiveSettings.readingZone.enabled
@@ -1195,7 +1176,17 @@ function TeleprompterSession({
                       : 'border border-white/10 text-gray-300 hover:bg-white/5'
                   }`}
                 >
-                  Zona
+                  Señal
+                </button>
+                {/* Acceso de un toque al modo márgenes: mismo enterMarginsEdit
+                    que el botón "Ajustar arrastrando…" del panel, pero sin
+                    tener que abrir el cajón primero. */}
+                <button
+                  type="button"
+                  onClick={enterMarginsEdit}
+                  className="rounded-md border border-white/10 px-3 py-2 text-sm text-gray-300 hover:bg-white/5"
+                >
+                  Margen
                 </button>
                 <button
                   type="button"

@@ -6,7 +6,7 @@
 // vez, igual que ya hacía el slider.
 //
 // Viven FUERA del wrapper con mirror/brillo/contraste, igual que
-// ReadingZoneGuides: son un control, no contenido. El mirror no cambia en
+// SignalIndicator: son un control, no contenido. El mirror no cambia en
 // qué posición quedan de todos modos — una franja simétrica alrededor del
 // centro ocupa el mismo ancho reflejada o no — pero `offsetX` sí las mueve,
 // porque ese desplazamiento es real (el bloque de texto entero se corre).
