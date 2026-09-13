@@ -182,6 +182,13 @@ export function buildCalibrationStyle(settings: CalibrationSettings): CSSPropert
     position: 'relative',
     margin: '0 auto',
     maxWidth: `${settings.maxWidth}%`,
+    // Sin esto, una palabra más ancha que la columna (fontSize grande +
+    // margen angosto, la combinación que justamente invita a probar el modo
+    // Margen) se sale del maxWidth sin que nada la corte — ninguna palabra
+    // "normal" se ve afectada, esto solo actúa cuando una palabra sola no
+    // entraría de otro modo. Así el texto SIEMPRE queda dentro de las
+    // barras de MarginGuides, sin excepción, sea cual sea el ancho elegido.
+    overflowWrap: 'break-word',
     fontSize: `${settings.fontSize}px`,
     fontWeight: fontWeightToCss(settings.fontWeight),
     lineHeight: settings.lineHeight,

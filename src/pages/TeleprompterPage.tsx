@@ -347,26 +347,18 @@ function TeleprompterSession({
   const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
   const [showSaveAsNewProfileDialog, setShowSaveAsNewProfileDialog] = useState(false)
-  // Mientras se arrastra un slider de la hoja de Ajustes (SettingsSheet) o
-  // el indicador de Señal, la pantalla debe quedar SOLO con el texto y lo
-  // que se está ajustando — ni header ni footer, ni siquiera Play/Reiniciar.
-  // Distinto del modo márgenes: ese sí necesita mostrar ✓/✕ (ver
-  // hideFooterEntirely más abajo, que a propósito NO incluye editMode).
+  // Mientras se arrastra un slider de la hoja de Ajustes (SettingsSheet), el
+  // indicador de Señal, o una barra de márgenes, la pantalla debe quedar
+  // SOLO con el texto y lo que se está ajustando — ni header ni footer, ni
+  // siquiera Play/Reiniciar (ver hideControls más abajo).
   const [panelAdjusting, setPanelAdjusting] = useState(false)
   const [signalDragging, setSignalDragging] = useState(false)
-  // Modo de ajuste directo de márgenes (ver MarginGuides): se entra a
-  // propósito desde un botón, nunca con un toque suelto sobre el texto.
-  // Mientras está activo, el footer deja de mostrar los controles de
-  // reproducción (✓/✕ los reemplazan) y el ocultado automático queda
-  // suspendido (ver controlsVisible más abajo) — el modo en sí no pausa ni
-  // reanuda nada. El indicador de Señal (SignalIndicator) NO tiene un modo
-  // equivalente a propósito: se arrastra directo en todo momento mientras
-  // está activado, sin este mecanismo.
-  const [editMode, setEditMode] = useState<'none' | 'margins'>('none')
-  // Snapshot de ANTES de entrar al modo, para que ✕ pueda restaurarlo tal
-  // cual — no alcanza con "no tocar nada mientras se arrastra", porque
-  // arrastrar sí aplica en vivo (para ver el efecto mientras se ajusta).
-  const preEditMaxWidthRef = useRef<number | null>(null)
+  const [marginsDragging, setMarginsDragging] = useState(false)
+  // Barras de márgenes (ver MarginGuides): igual que la Señal, un simple
+  // mostrar/ocultar con el botón "Margen" del footer — sin modo, sin ✓/✕.
+  // Se arrastran directo y se aplican en vivo; el valor queda donde se
+  // suelte, no hay nada que "confirmar" ni "cancelar".
+  const [marginsGuidesVisible, setMarginsGuidesVisible] = useState(false)
   // B.1: se inicializa con el commandId YA VISTO (si `remoteSession` llega
   // con uno, porque este componente se está remontando tras un cambio de
   // guion con la sesión todavía viva) en vez de `null` — si no, el guard de
@@ -391,25 +383,19 @@ function TeleprompterSession({
 
   // Nunca se ocultan mientras: hay un modal de emparejamiento abierto, hay
   // un error de control remoto visible, algún control del footer (p. ej.
-  // el <select> de perfil con su desplegable abierto) tiene el foco, el
-  // panel de ajustes en vivo está abierto, o hay un modo de ajuste directo
-  // en curso (márgenes/zona de lectura: se necesita ver ✓/✕ y el resultado
-  // del arrastre todo el tiempo, no que se oculte a los 3 segundos). El
-  // estado "pausado" NO fuerza los controles visibles a propósito — se
-  // trata como cualquier otro estado de reproducción.
-  const controlsVisible =
-    !idle || showPairingModal || remoteError != null || footerHasFocus || settingsPanelOpen || editMode !== 'none'
+  // el <select> de perfil con su desplegable abierto) tiene el foco, o el
+  // panel de ajustes en vivo está abierto. El estado "pausado" NO fuerza
+  // los controles visibles a propósito — se trata como cualquier otro
+  // estado de reproducción.
+  const controlsVisible = !idle || showPairingModal || remoteError != null || footerHasFocus || settingsPanelOpen
 
   // Mientras se calibra "en vivo" (arrastrando un slider de la hoja de
-  // Ajustes, o el indicador de Señal) la pantalla queda SOLO con el texto y
-  // lo que se está ajustando: ni header ni footer, aunque `controlsVisible`
-  // diga que deberían verse. El modo márgenes es distinto a propósito: ahí
-  // SÍ hacen falta ✓/✕, así que solo se oculta el header — el footer sigue
-  // mostrando su barra de confirmar/cancelar de siempre (ver el JSX del
-  // footer más abajo, que ya reemplaza su contenido cuando editMode
-  // !== 'none' y no necesita este flag).
-  const hideHeader = panelAdjusting || signalDragging || editMode === 'margins'
-  const hideFooterEntirely = panelAdjusting || signalDragging
+  // Ajustes, el indicador de Señal, o una barra de márgenes) la pantalla
+  // queda SOLO con el texto y lo que se está ajustando: ni header ni
+  // footer, aunque `controlsVisible` diga que deberían verse. Ya no hay un
+  // "modo" con ✓/✕ que preservar (márgenes y Señal se aplican en vivo por
+  // igual), así que header y footer se tratan exactamente igual.
+  const hideControls = panelAdjusting || signalDragging || marginsDragging
 
   // TOQUE FANTASMA: si el mismo toque que revela los controles (touchstart)
   // también generara su click sobre un botón recién aparecido (p. ej. Play),
@@ -534,41 +520,32 @@ function TeleprompterSession({
     applyLiveSettings({ ...(liveSettings ?? DEFAULT_CALIBRATION), ...patch })
   }
 
-  // Modo márgenes: guarda el maxWidth de antes de entrar (para que ✕ lo
-  // restaure) y cierra el panel de Ajustes — el footer pasa a mostrar ✓/✕
-  // en su lugar (ver el JSX del footer más abajo).
-  function enterMarginsEdit() {
-    preEditMaxWidthRef.current = (liveSettings ?? DEFAULT_CALIBRATION).maxWidth
+  // Mostrar las barras de márgenes desde el panel: cierra la hoja de
+  // Ajustes (para no tapar el arrastre) y las activa — a diferencia de
+  // togglear el botón "Margen" del footer, esto siempre las ENCIENDE
+  // (nunca las apaga por accidente si ya estaban visibles).
+  function showMarginsGuidesFromPanel() {
     setSettingsPanelOpen(false)
-    setEditMode('margins')
-  }
-
-  // ✓ aplica: el valor ya está aplicado en vivo (se ve mientras se
-  // arrastra) — confirmar solo significa "salir del modo, quedarse con
-  // esto". Igual que el resto de los ajustes en vivo, no se guarda en el
-  // perfil hasta tocar "Guardar en perfil" aparte.
-  function confirmEdit() {
-    setEditMode('none')
-  }
-
-  // ✕ vuelve al valor anterior: restaura el snapshot y sale del modo.
-  function cancelEdit() {
-    if (editMode === 'margins' && preEditMaxWidthRef.current != null) {
-      handleLiveSettingsChange({ maxWidth: preEditMaxWidthRef.current })
-    }
-    setEditMode('none')
+    setMarginsGuidesVisible(true)
   }
 
   // Activar/desactivar el indicador de Señal de un toque, sin abrir el
   // panel — el triángulo se refleja en el vidrio y puede que se quiera
-  // apagar a mitad de una grabación. A diferencia del modo márgenes, esto
-  // NO suspende el ocultado automático ni congela los demás controles: es
-  // un botón más del footer, como Reiniciar. Una vez activado, el
-  // indicador ya se puede arrastrar directamente (ver SignalIndicator) —
-  // no hace falta ningún paso más para ajustarlo.
+  // apagar a mitad de una grabación. Mostrar/ocultar el indicador NO
+  // suspende el ocultado automático ni congela los demás controles: es un
+  // botón más del footer, como Reiniciar (solo ARRASTRARLO lo hace, ver
+  // hideControls). Una vez activado, el indicador ya se puede arrastrar
+  // directamente (ver SignalIndicator) — no hace falta ningún paso más.
   function toggleSignalEnabled() {
     const current = (liveSettings ?? DEFAULT_CALIBRATION).readingZone
     handleLiveSettingsChange({ readingZone: { ...current, enabled: !current.enabled } })
+  }
+
+  // Mismo criterio que toggleSignalEnabled: mostrar/ocultar las barras de
+  // márgenes es un simple botón del footer, no un "modo" — solo arrastrar
+  // una barra oculta el resto de los controles (ver hideControls).
+  function toggleMarginsGuides() {
+    setMarginsGuidesVisible((v) => !v)
   }
 
   // "Guardar en perfil": si hay un perfil elegido, sobreescribe sus valores;
@@ -963,7 +940,7 @@ function TeleprompterSession({
           settings={liveSettings ?? DEFAULT_CALIBRATION}
           onChange={handleLiveSettingsChange}
           collapsible
-          onAdjustMargins={enterMarginsEdit}
+          onAdjustMargins={showMarginsGuidesFromPanel}
         />
       </SettingsSheet>
 
@@ -977,9 +954,9 @@ function TeleprompterSession({
           siempre el 100% del contenedor raíz y esto no puede pasar. */}
       <div
         className={`absolute inset-x-0 top-0 z-20 flex flex-col transition-opacity duration-200 ${
-          controlsVisible && !hideHeader ? 'opacity-100' : 'opacity-0'
+          controlsVisible && !hideControls ? 'opacity-100' : 'opacity-0'
         }`}
-        style={{ pointerEvents: controlsInteractive && !hideHeader ? 'auto' : 'none' }}
+        style={{ pointerEvents: controlsInteractive && !hideControls ? 'auto' : 'none' }}
       >
         {/* Ancho angosto (360px): Volver/título/% siempre entran en la
             primera fila (shrink-0 en los fijos, min-w-0+truncate en el
@@ -1082,21 +1059,23 @@ function TeleprompterSession({
         {/* Indicador de Señal y márgenes: fuera del wrapper de arriba a
             propósito (ver los comentarios de SignalIndicator/MarginGuides) —
             ninguno de los dos debe invertirse con el espejo ni oscurecerse
-            con el brillo/contraste calibrados. El indicador se oculta durante
-            el modo márgenes (no compite con la barra derecha ni se puede
-            arrastrar por error mientras se ajustan los márgenes). */}
-        {effectiveSettings.readingZone.enabled && editMode !== 'margins' && (
+            con el brillo/contraste calibrados. El indicador se oculta
+            mientras las barras de márgenes están visibles: la izquierda
+            puede terminar muy cerca del borde según el maxWidth, y no tiene
+            sentido competir por el mismo gesto. */}
+        {effectiveSettings.readingZone.enabled && !marginsGuidesVisible && (
           <SignalIndicator
             center={effectiveSettings.readingZone.center}
             onChange={(center) => handleLiveSettingsChange({ readingZone: { ...effectiveSettings.readingZone, center } })}
             onDraggingChange={setSignalDragging}
           />
         )}
-        {editMode === 'margins' && (
+        {marginsGuidesVisible && (
           <MarginGuides
             maxWidth={effectiveSettings.maxWidth}
             offsetX={effectiveSettings.offsetX}
             onChange={(maxWidth) => handleLiveSettingsChange({ maxWidth })}
+            onDraggingChange={setMarginsDragging}
           />
         )}
       </div>
@@ -1107,9 +1086,9 @@ function TeleprompterSession({
           <select> de perfil con su desplegable abierto en desktop). */}
       <div
         className={`absolute inset-x-0 bottom-0 z-20 transition-opacity duration-200 ${
-          controlsVisible && !hideFooterEntirely ? 'opacity-100' : 'opacity-0'
+          controlsVisible && !hideControls ? 'opacity-100' : 'opacity-0'
         }`}
-        style={{ pointerEvents: controlsInteractive && !hideFooterEntirely ? 'auto' : 'none' }}
+        style={{ pointerEvents: controlsInteractive && !hideControls ? 'auto' : 'none' }}
       >
         {showSaveAsNewProfileDialog && (
           <PromptDialog
@@ -1130,137 +1109,111 @@ function TeleprompterSession({
           onBlur={handleFooterBlur}
           className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 bg-[#0b0c10]/90 px-4 py-3 backdrop-blur-sm sm:px-6"
         >
-          {editMode !== 'none' ? (
-            // Modo de ajuste directo: reemplaza TODO el footer normal — los
-            // controles de reproducción no están (no solo "deshabilitados":
-            // ni siquiera se renderizan, así que literalmente no responden a
-            // nada) mientras se arrastra. ✓/✕ son los únicos controles.
-            <div className="flex w-full items-center justify-between gap-3">
-              <span className="text-sm font-medium text-gray-200">Ajustando márgenes</span>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={cancelEdit}
-                  aria-label="Cancelar, volver al valor anterior"
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-gray-300 hover:bg-white/5"
-                >
-                  ✕
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmEdit}
-                  aria-label="Aplicar"
-                  className={`flex h-9 w-9 items-center justify-center rounded-md ${ACCENT_BG} ${ON_ACCENT} ${ACCENT_BG_HOVER}`}
-                >
-                  ✓
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              {/* flex-wrap acá TAMBIÉN (no solo en el <footer>): los botones
-                  son un solo hijo del footer desde el punto de vista del
-                  flex-wrap de arriba — si ESTE grupo no envuelve sus propios
-                  botones, el grupo entero se desborda igual (confirmado con
-                  "Control remoto" cortado a 360px), aunque el footer que lo
-                  contiene sí sepa envolver grupos completos. */}
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={togglePlay}
-                  className={`${FONT_DISPLAY} rounded-md ${ACCENT_BG} px-4 py-2 text-sm font-medium ${ON_ACCENT} ${ACCENT_BG_HOVER}`}
-                >
-                  {playLabel}
-                </button>
-                <button
-                  type="button"
-                  onClick={resetPlayback}
-                  className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
-                >
-                  Reiniciar
-                </button>
-                {/* Acceso de un toque al indicador de Señal: no entra a
-                    ningún panel ni modo de ajuste, solo prende/apaga el
-                    triángulo — una vez activado ya se puede arrastrar
-                    directo (ver SignalIndicator). Puede que se quiera apagar
-                    a mitad de una grabación porque se refleja en el vidrio
-                    (ver el comentario de toggleSignalEnabled). */}
-                <button
-                  type="button"
-                  onClick={toggleSignalEnabled}
-                  aria-pressed={effectiveSettings.readingZone.enabled}
-                  className={`rounded-md px-3 py-2 text-sm transition-colors ${
-                    effectiveSettings.readingZone.enabled
-                      ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}`
-                      : 'border border-white/10 text-gray-300 hover:bg-white/5'
-                  }`}
-                >
-                  Señal
-                </button>
-                {/* Acceso de un toque al modo márgenes: mismo enterMarginsEdit
-                    que el botón "Ajustar arrastrando…" del panel, pero sin
-                    tener que abrir la hoja de ajustes primero. */}
-                <button
-                  type="button"
-                  onClick={enterMarginsEdit}
-                  className="rounded-md border border-white/10 px-3 py-2 text-sm text-gray-300 hover:bg-white/5"
-                >
-                  Margen
-                </button>
-                {/* Engranaje: abre la hoja de Configuración rápida (ver
-                    SettingsSheet) con el resto de los ajustes — reemplaza a
-                    la pestaña fija que antes vivía en el borde derecho. Un
-                    botón más del footer: se oculta y protege contra el
-                    toque fantasma exactamente igual que sus vecinos. */}
-                <button
-                  type="button"
-                  onClick={() => setSettingsPanelOpen((v) => !v)}
-                  aria-label="Ajustes"
-                  aria-expanded={settingsPanelOpen}
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-gray-300 hover:bg-white/5"
-                >
-                  ⚙
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onRemoteControlClick(script.title || 'Sin título')}
-                  disabled={!remoteConfigured}
-                  title={!remoteConfigured ? 'Control remoto no disponible en este momento.' : undefined}
-                  className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {!remoteSessionId
-                    ? 'Control remoto'
-                    : remoteSession?.status === 'ended'
-                      ? 'Sesión cerrada'
-                      : remoteSession?.remoteConnected
-                        ? 'Remoto conectado'
-                        : 'Esperando remoto…'}
-                </button>
-                {remoteError && <span className="basis-full text-xs text-red-400">{remoteError}</span>}
-              </div>
+          {/* flex-wrap acá TAMBIÉN (no solo en el <footer>): los botones
+              son un solo hijo del footer desde el punto de vista del
+              flex-wrap de arriba — si ESTE grupo no envuelve sus propios
+              botones, el grupo entero se desborda igual (confirmado con
+              "Control remoto" cortado a 360px), aunque el footer que lo
+              contiene sí sepa envolver grupos completos. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={togglePlay}
+              className={`${FONT_DISPLAY} rounded-md ${ACCENT_BG} px-4 py-2 text-sm font-medium ${ON_ACCENT} ${ACCENT_BG_HOVER}`}
+            >
+              {playLabel}
+            </button>
+            <button
+              type="button"
+              onClick={resetPlayback}
+              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
+            >
+              Reiniciar
+            </button>
+            {/* Acceso de un toque al indicador de Señal: no entra a ningún
+                panel, solo prende/apaga el triángulo — una vez activado ya
+                se puede arrastrar directo (ver SignalIndicator). Puede que
+                se quiera apagar a mitad de una grabación porque se refleja
+                en el vidrio (ver el comentario de toggleSignalEnabled). */}
+            <button
+              type="button"
+              onClick={toggleSignalEnabled}
+              aria-pressed={effectiveSettings.readingZone.enabled}
+              className={`rounded-md px-3 py-2 text-sm transition-colors ${
+                effectiveSettings.readingZone.enabled
+                  ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}`
+                  : 'border border-white/10 text-gray-300 hover:bg-white/5'
+              }`}
+            >
+              Señal
+            </button>
+            {/* Mismo criterio que "Señal": prende/apaga las barras de
+                márgenes, sin abrir ningún panel ni entrar a un modo — se
+                arrastran directo y se aplican en vivo (ver MarginGuides). */}
+            <button
+              type="button"
+              onClick={toggleMarginsGuides}
+              aria-pressed={marginsGuidesVisible}
+              className={`rounded-md px-3 py-2 text-sm transition-colors ${
+                marginsGuidesVisible
+                  ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}`
+                  : 'border border-white/10 text-gray-300 hover:bg-white/5'
+              }`}
+            >
+              Margen
+            </button>
+            {/* Engranaje: abre la hoja de Configuración rápida (ver
+                SettingsSheet) con el resto de los ajustes — reemplaza a
+                la pestaña fija que antes vivía en el borde derecho. Un
+                botón más del footer: se oculta y protege contra el
+                toque fantasma exactamente igual que sus vecinos. */}
+            <button
+              type="button"
+              onClick={() => setSettingsPanelOpen((v) => !v)}
+              aria-label="Ajustes"
+              aria-expanded={settingsPanelOpen}
+              className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-gray-300 hover:bg-white/5"
+            >
+              ⚙
+            </button>
+            <button
+              type="button"
+              onClick={() => onRemoteControlClick(script.title || 'Sin título')}
+              disabled={!remoteConfigured}
+              title={!remoteConfigured ? 'Control remoto no disponible en este momento.' : undefined}
+              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {!remoteSessionId
+                ? 'Control remoto'
+                : remoteSession?.status === 'ended'
+                  ? 'Sesión cerrada'
+                  : remoteSession?.remoteConnected
+                    ? 'Remoto conectado'
+                    : 'Esperando remoto…'}
+            </button>
+            {remoteError && <span className="basis-full text-xs text-red-400">{remoteError}</span>}
+          </div>
 
-              <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
-                <span>Velocidad (PPM)</span>
-                <input
-                  type="number"
-                  min={MIN_REMOTE_WPM}
-                  max={MAX_REMOTE_WPM}
-                  value={wpm}
-                  onChange={(e) => setSpeed(Number(e.target.value) || DEFAULT_WPM)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') e.currentTarget.blur()
-                  }}
-                  className="w-16 shrink-0 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
-                />
-              </label>
+          <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
+            <span>Velocidad (PPM)</span>
+            <input
+              type="number"
+              min={MIN_REMOTE_WPM}
+              max={MAX_REMOTE_WPM}
+              value={wpm}
+              onChange={(e) => setSpeed(Number(e.target.value) || DEFAULT_WPM)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+              }}
+              className="w-16 shrink-0 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
+            />
+          </label>
 
-              <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
-                <div className={`h-full ${ACCENT_BG}`} style={{ width: `${Math.round(progress * 100)}%` }} />
-              </div>
+          <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
+            <div className={`h-full ${ACCENT_BG}`} style={{ width: `${Math.round(progress * 100)}%` }} />
+          </div>
 
-              <span className="text-xs text-gray-500">{statusLabel}</span>
-            </>
-          )}
+          <span className="text-xs text-gray-500">{statusLabel}</span>
         </footer>
       </div>
     </div>
