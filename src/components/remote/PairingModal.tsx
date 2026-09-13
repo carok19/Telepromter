@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import QRCode from 'react-qr-code'
 import type { RemoteSession } from '../../services/remoteSession'
+import { ModalPortal } from '../shared/ModalPortal'
 import { ACCENT_SURFACE, FONT_DISPLAY, SURFACE_RAISED } from '../../styles/tokens'
 
 interface PairingModalProps {
@@ -45,7 +46,7 @@ export function PairingModal({ sessionId, session, joinUrl, onClose }: PairingMo
         : 'Esperando conexión…'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+    <ModalPortal backdropClassName="bg-black/70">
       <div className={`w-full max-w-sm rounded-lg border border-white/10 ${SURFACE_RAISED} p-6 text-center`}>
         <h2 className={`text-lg font-semibold text-gray-100 ${FONT_DISPLAY}`}>Control remoto</h2>
         <p className="mt-2 text-sm text-gray-400">
@@ -75,6 +76,6 @@ export function PairingModal({ sessionId, session, joinUrl, onClose }: PairingMo
           Cerrar
         </button>
       </div>
-    </div>
+    </ModalPortal>
   )
 }

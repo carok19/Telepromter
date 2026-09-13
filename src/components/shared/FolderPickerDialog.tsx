@@ -7,6 +7,7 @@
 import { useEffect } from 'react'
 import type { FolderRecord } from '../../db/db'
 import { FONT_DISPLAY, SURFACE_RAISED } from '../../styles/tokens'
+import { ModalPortal } from './ModalPortal'
 
 interface FolderPickerDialogProps {
   folders: FolderRecord[]
@@ -24,13 +25,8 @@ export function FolderPickerDialog({ folders, onSelect, onClose }: FolderPickerD
   }, [onClose])
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-      role="presentation"
-    >
+    <ModalPortal onBackdropClick={onClose}>
       <div
-        onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="folder-picker-title"
@@ -69,6 +65,6 @@ export function FolderPickerDialog({ folders, onSelect, onClose }: FolderPickerD
           Cancelar
         </button>
       </div>
-    </div>
+    </ModalPortal>
   )
 }

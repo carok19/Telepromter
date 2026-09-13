@@ -4,6 +4,7 @@
 // se puede estilar.
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { BTN_PRIMARY, FONT_DISPLAY, SURFACE_RAISED } from '../../styles/tokens'
+import { ModalPortal } from './ModalPortal'
 
 interface PromptDialogProps {
   title: string
@@ -48,9 +49,8 @@ export function PromptDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={onClose} role="presentation">
+    <ModalPortal onBackdropClick={onClose}>
       <form
-        onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
         role="dialog"
         aria-modal="true"
@@ -88,6 +88,6 @@ export function PromptDialog({
           </button>
         </div>
       </form>
-    </div>
+    </ModalPortal>
   )
 }

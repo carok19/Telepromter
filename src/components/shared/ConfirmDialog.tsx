@@ -5,6 +5,7 @@
 // de carpetas (Cancelar / Mover a "Sin carpeta" / Eliminar todo).
 import { useEffect } from 'react'
 import { ACCENT_BG, ACCENT_BG_HOVER, FONT_DISPLAY, ON_ACCENT, SURFACE_RAISED } from '../../styles/tokens'
+import { ModalPortal } from './ModalPortal'
 
 export interface ConfirmDialogAction {
   label: string
@@ -40,13 +41,8 @@ export function ConfirmDialog({ title, message, actions, onClose }: ConfirmDialo
   }, [onClose])
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-      role="presentation"
-    >
+    <ModalPortal onBackdropClick={onClose}>
       <div
-        onClick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
@@ -69,6 +65,6 @@ export function ConfirmDialog({ title, message, actions, onClose }: ConfirmDialo
           ))}
         </div>
       </div>
-    </div>
+    </ModalPortal>
   )
 }
