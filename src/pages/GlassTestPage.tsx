@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalibrationPanel } from '../components/glassMode/CalibrationPanel'
+import { CalibrationSettingsPanel } from '../components/calibration/CalibrationSettingsPanel'
+import { ProfileControls } from '../components/calibration/ProfileControls'
 import { GlassTestPattern } from '../components/glassMode/GlassTestPattern'
-import { MirrorModeSelector } from '../components/glassMode/MirrorModeSelector'
 import { ReadingZoneGuides } from '../components/teleprompter/ReadingZoneGuides'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { PromptDialog } from '../components/shared/PromptDialog'
 import { DEFAULT_CALIBRATION, getEffectiveColors, type CalibrationSettings } from '../engine/calibrationEngine'
 import { useWakeLock } from '../hooks/useWakeLock'
 import { useProfilesStore } from '../stores/profilesStore'
-import { ACCENT_SURFACE, FONT_DISPLAY, LINK } from '../styles/tokens'
+import { FONT_DISPLAY, LINK } from '../styles/tokens'
 
 export function GlassTestPage() {
   const navigate = useNavigate()
@@ -131,54 +131,23 @@ export function GlassTestPage() {
         <div
           className={`${panelOpen ? 'flex max-h-[45vh] lg:max-h-none' : 'hidden'} flex-col gap-4 overflow-y-auto lg:flex`}
         >
-          <div className="flex flex-col gap-2 border-b border-white/10 p-4">
-            <label className="flex flex-col gap-1 text-xs text-gray-400">
-              <span>Perfil</span>
-              <select
-                value={selectedProfileId ?? ''}
-                onChange={(e) => handleSelectProfile(e.target.value)}
-                className="rounded border border-white/10 bg-[#0f1117] px-2 py-1.5 text-sm text-gray-200"
-              >
-                <option value="">Sin guardar (predeterminado)</option>
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleSaveChanges}
-                className={`flex-1 ${ACCENT_SURFACE} px-3 py-1.5 text-xs font-medium`}
-              >
-                Guardar
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSaveAsNewDialog(true)}
-                className="flex-1 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 hover:bg-white/5"
-              >
-                Guardar como nuevo
-              </button>
-              {selectedProfileId != null && (
-                <button
-                  type="button"
-                  onClick={() => setShowDeleteDialog(true)}
-                  className="rounded-md border border-red-500/30 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10"
-                >
-                  Eliminar
-                </button>
-              )}
-            </div>
+          <div className="border-b border-white/10 p-4">
+            <ProfileControls
+              profiles={profiles}
+              selectedProfileId={selectedProfileId}
+              onSelectProfile={handleSelectProfile}
+              placeholderLabel="Sin guardar (predeterminado)"
+              saveLabel="Guardar"
+              saveVariant="primary"
+              onSave={handleSaveChanges}
+              onSaveAsNew={() => setShowSaveAsNewDialog(true)}
+              onDelete={() => setShowDeleteDialog(true)}
+            />
           </div>
 
-          <div className="px-4">
-            <MirrorModeSelector value={settings.mirror} onChange={(mirror) => handleChange({ mirror })} />
+          <div className="p-4">
+            <CalibrationSettingsPanel settings={settings} onChange={handleChange} />
           </div>
-
-          <CalibrationPanel settings={settings} onChange={handleChange} />
         </div>
       </div>
 

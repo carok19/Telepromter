@@ -11,9 +11,12 @@ import {
   type CalibrationSettings,
   type ReadingZone,
 } from '../engine/calibrationEngine'
-import { LiveSettingsPanel } from '../components/teleprompter/LiveSettingsPanel'
+import { CalibrationSettingsPanel } from '../components/calibration/CalibrationSettingsPanel'
+import { ProfileControls } from '../components/calibration/ProfileControls'
 import { MarginGuides } from '../components/teleprompter/MarginGuides'
 import { ReadingZoneGuides } from '../components/teleprompter/ReadingZoneGuides'
+import { SettingsDrawer } from '../components/teleprompter/SettingsDrawer'
+import { SettingsTab } from '../components/teleprompter/SettingsTab'
 import { PairingModal } from '../components/remote/PairingModal'
 import { PromptDialog } from '../components/shared/PromptDialog'
 import { db, type FolderRecord, type ScriptRecord } from '../db/db'
@@ -935,6 +938,33 @@ function TeleprompterSession({
       ref={rootRef}
       className={`relative h-dvh w-full overflow-hidden bg-[#0b0c10] ${idle ? 'cursor-none' : ''}`}
     >
+      {/* Pestaña de Ajustes: pegada al borde izquierdo, siempre visible (no
+          se suma al OR-chain de controlsVisible: a diferencia del resto de
+          los controles, que se ocultan para no distraer de la lectura, esta
+          es la única forma de volver a abrir el panel — si se ocultara con
+          los demás no habría manera de reabrirlo sin antes despertar el
+          resto de los controles). Se oculta solo durante un modo de ajuste
+          directo (márgenes/zona de lectura), para no competir con la barra
+          de márgenes cuando queda cerca del borde. */}
+      <SettingsTab open={settingsPanelOpen} onClick={() => setSettingsPanelOpen((v) => !v)} hidden={editMode !== 'none'} />
+      <SettingsDrawer open={settingsPanelOpen} interactive={controlsInteractive} onClose={() => setSettingsPanelOpen(false)}>
+        <ProfileControls
+          profiles={profiles}
+          selectedProfileId={selectedProfileId}
+          onSelectProfile={handleSelectProfile}
+          placeholderLabel="Predeterminado"
+          saveLabel="Guardar en perfil"
+          onSave={handleSaveLiveSettingsToProfile}
+        />
+        <CalibrationSettingsPanel
+          settings={liveSettings ?? DEFAULT_CALIBRATION}
+          onChange={handleLiveSettingsChange}
+          collapsible
+          onAdjustMargins={enterMarginsEdit}
+          onAdjustReadingZone={enterReadingZoneEdit}
+        />
+      </SettingsDrawer>
+
       {/* Overlay superior: header + aviso de pausa por marcador, ambos
           posicionados de forma absoluta (no en el flujo flex) para que
           ocultarlos nunca cambie el alto de viewportRef — el motor mide
@@ -1080,20 +1110,6 @@ function TeleprompterSession({
         }`}
         style={{ pointerEvents: controlsInteractive ? 'auto' : 'none' }}
       >
-        {/* F8.4 parte B: vive DENTRO del mismo overlay que el footer (no un
-            overlay aparte) para heredar gratis su ocultado automático y su
-            protección de toque fantasma — no hace falta duplicar ninguna
-            de las dos acá. */}
-        {settingsPanelOpen && (
-          <LiveSettingsPanel
-            settings={liveSettings ?? DEFAULT_CALIBRATION}
-            onChange={handleLiveSettingsChange}
-            onSave={handleSaveLiveSettingsToProfile}
-            onClose={() => setSettingsPanelOpen(false)}
-            onAdjustMargins={enterMarginsEdit}
-            onAdjustReadingZone={enterReadingZoneEdit}
-          />
-        )}
         {showSaveAsNewProfileDialog && (
           <PromptDialog
             title="Guardar como nuevo perfil"
@@ -1164,13 +1180,6 @@ function TeleprompterSession({
                 >
                   Reiniciar
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setSettingsPanelOpen((v) => !v)}
-                  className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
-                >
-                  Ajustes
-                </button>
                 {/* Toggle rápido de la Zona de lectura: no entra al panel ni
                     a ningún modo de ajuste, solo prende/apaga las guías —
                     puede que se quieran apagar a mitad de una grabación
@@ -1219,25 +1228,6 @@ function TeleprompterSession({
                   }}
                   className="w-16 shrink-0 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
                 />
-              </label>
-
-              <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
-                <span>Perfil</span>
-                <select
-                  value={selectedProfileId ?? ''}
-                  onChange={(e) => {
-                    handleSelectProfile(e.target.value)
-                    e.target.blur()
-                  }}
-                  className="rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
-                >
-                  <option value="">Predeterminado</option>
-                  {profiles.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
               </label>
 
               <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
