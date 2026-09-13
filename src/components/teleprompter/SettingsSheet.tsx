@@ -10,29 +10,28 @@
 // tampoco tiene sentido difuminar nada (ver `adjusting` más abajo).
 //
 // LO MÁS IMPORTANTE: mientras se arrastra cualquier slider del panel, la
-// hoja entera DESAPARECE (no queda semitransparente encimada con el texto:
-// eso resultó ilegible) — solo quedan visibles el texto limpio, el propio
-// control que se está tocando (para no perder el dedo) y un recuadro
-// flotante arriba con "Nombre del control · valor". Al soltar, la hoja
-// reaparece con una transición suave.
+// hoja entera DESAPARECE — control incluido, no solo el resto del panel: no
+// queda nada cruzando el texto. Solo quedan visibles el texto limpio y un
+// recuadro flotante arriba con "Nombre del control · valor". Al soltar, la
+// hoja reaparece con una transición suave.
 //
-// Cómo se logra que UN SOLO descendiente (el control activo) siga visible
-// dentro de una hoja que por lo demás desapareció: `visibility` (a
-// diferencia de `opacity`, que se compone multiplicativamente y no se puede
-// "deshacer" en un hijo) SÍ se puede sobrescribir por elemento — un
-// descendiente con `visibility: visible` DENTRO de un ancestro con
-// `visibility: hidden` se seguí viendo y respondiendo a punteros
-// (confirmado con una prueba mínima antes de implementar esto). Por eso:
-// - la hoja entera pasa a `visibility: hidden` mientras `adjusting` es true;
-// - el <input type="range"> activo recibe `style.visibility = 'visible'`
-//   de forma imperativa (por ref, ver `activeInputRef`) — no por props, para
-//   no tener que tocar los ~15 sliders de CalibrationSettingsPanel;
-// - se restaura (`visibility = ''`) apenas termina el arrastre.
-// `opacity` NUNCA se toca mientras `adjusting` es true (haría invisible
-// también al control activo, sin excepción posible) — la transición suave
-// de reaparición (`revealOpacity`) se dispara recién DESPUÉS de restaurar
-// `visibility`, cuando ya no hace falta ninguna excepción: en ese momento
-// toda la hoja (control activo incluido) puede volver a aparecer junta.
+// El arrastre de un <input type="range"> sigue funcionando aunque el propio
+// input pase a `visibility: hidden` a mitad de gesto — el navegador ya
+// capturó el puntero al empezar (confirmado con una prueba mínima antes de
+// implementar esto: mover el mouse y ocultar el input a mitad de camino
+// sigue actualizando su valor con normalidad). Por eso alcanza con un solo
+// `visibility: hidden` en el contenedor entero de la hoja — no hace falta
+// ninguna excepción por elemento.
+//
+// `onAdjustingChange` avisa a TeleprompterPage cuando empieza/termina un
+// arrastre, para que TAMBIÉN oculte header y footer (Play, Reiniciar,
+// Señal, Margen, velocidad, etc.) mientras dura — la pantalla debe quedar
+// solo con el texto y lo que se está tocando.
+//
+// `opacity` NUNCA se toca mientras `adjusting` es true (queda fija en el
+// valor de reposo, aunque no se vea nada por estar oculta vía
+// `visibility`) — la transición suave de reaparición (`revealOpacity`) se
+// dispara recién DESPUÉS de restaurar `visibility`.
 //
 // El recuadro de valor lee el texto del propio Slider (su <label> ya
 // muestra "Nombre" y "valorUnidad" en dos <span>) en vez de duplicar esa
@@ -67,6 +66,7 @@ interface SettingsSheetProps {
   onClose: () => void
   children: ReactNode
   reduceEffects?: boolean
+  onAdjustingChange?: (adjusting: boolean) => void
 }
 
 function isRangeInput(target: EventTarget | null): target is HTMLInputElement {
@@ -84,7 +84,14 @@ function readSliderLabel(input: HTMLInputElement): string | null {
   return name && value ? `${name} · ${value}` : (name ?? null)
 }
 
-export function SettingsSheet({ open, interactive, onClose, children, reduceEffects = false }: SettingsSheetProps) {
+export function SettingsSheet({
+  open,
+  interactive,
+  onClose,
+  children,
+  reduceEffects = false,
+  onAdjustingChange,
+}: SettingsSheetProps) {
   const canInteract = open && interactive
 
   const [mounted, setMounted] = useState(open)
@@ -117,14 +124,8 @@ export function SettingsSheet({ open, interactive, onClose, children, reduceEffe
   function handleContentPointerDownCapture(e: ReactPointerEvent<HTMLDivElement>) {
     if (!isRangeInput(e.target)) return
     activeInputRef.current = e.target
-    e.target.style.visibility = 'visible'
-    // Por las dudas: la hoja pasa a `pointer-events: none` mientras se
-    // arrastra (ver más abajo), y aunque un arrastre nativo ya iniciado no
-    // debería depender de esto para seguir recibiendo eventos, esta línea
-    // lo deja escrito explícitamente en vez de confiar en el comportamiento
-    // implícito del navegador.
-    e.target.style.pointerEvents = 'auto'
     setAdjusting(true)
+    onAdjustingChange?.(true)
     setActiveControlLabel(readSliderLabel(e.target))
   }
   function handleContentInput(e: FormEvent<HTMLDivElement>) {
@@ -134,12 +135,9 @@ export function SettingsSheet({ open, interactive, onClose, children, reduceEffe
   }
   function handleContentPointerEnd() {
     if (!adjusting) return
-    if (activeInputRef.current) {
-      activeInputRef.current.style.visibility = ''
-      activeInputRef.current.style.pointerEvents = ''
-    }
     activeInputRef.current = null
     setAdjusting(false)
+    onAdjustingChange?.(false)
     setActiveControlLabel(null)
     // Ver el comentario de arriba: forzar 0 ahora, animar a 1 recién
     // después de que el navegador pinte ese 0, para que la transición se

@@ -347,6 +347,13 @@ function TeleprompterSession({
   const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
   const [showSaveAsNewProfileDialog, setShowSaveAsNewProfileDialog] = useState(false)
+  // Mientras se arrastra un slider de la hoja de Ajustes (SettingsSheet) o
+  // el indicador de Señal, la pantalla debe quedar SOLO con el texto y lo
+  // que se está ajustando — ni header ni footer, ni siquiera Play/Reiniciar.
+  // Distinto del modo márgenes: ese sí necesita mostrar ✓/✕ (ver
+  // hideFooterEntirely más abajo, que a propósito NO incluye editMode).
+  const [panelAdjusting, setPanelAdjusting] = useState(false)
+  const [signalDragging, setSignalDragging] = useState(false)
   // Modo de ajuste directo de márgenes (ver MarginGuides): se entra a
   // propósito desde un botón, nunca con un toque suelto sobre el texto.
   // Mientras está activo, el footer deja de mostrar los controles de
@@ -392,6 +399,17 @@ function TeleprompterSession({
   // trata como cualquier otro estado de reproducción.
   const controlsVisible =
     !idle || showPairingModal || remoteError != null || footerHasFocus || settingsPanelOpen || editMode !== 'none'
+
+  // Mientras se calibra "en vivo" (arrastrando un slider de la hoja de
+  // Ajustes, o el indicador de Señal) la pantalla queda SOLO con el texto y
+  // lo que se está ajustando: ni header ni footer, aunque `controlsVisible`
+  // diga que deberían verse. El modo márgenes es distinto a propósito: ahí
+  // SÍ hacen falta ✓/✕, así que solo se oculta el header — el footer sigue
+  // mostrando su barra de confirmar/cancelar de siempre (ver el JSX del
+  // footer más abajo, que ya reemplaza su contenido cuando editMode
+  // !== 'none' y no necesita este flag).
+  const hideHeader = panelAdjusting || signalDragging || editMode === 'margins'
+  const hideFooterEntirely = panelAdjusting || signalDragging
 
   // TOQUE FANTASMA: si el mismo toque que revela los controles (touchstart)
   // también generara su click sobre un botón recién aparecido (p. ej. Play),
@@ -931,6 +949,7 @@ function TeleprompterSession({
         interactive={controlsInteractive}
         onClose={() => setSettingsPanelOpen(false)}
         reduceEffects={status === 'playing'}
+        onAdjustingChange={setPanelAdjusting}
       >
         <ProfileControls
           profiles={profiles}
@@ -958,9 +977,9 @@ function TeleprompterSession({
           siempre el 100% del contenedor raíz y esto no puede pasar. */}
       <div
         className={`absolute inset-x-0 top-0 z-20 flex flex-col transition-opacity duration-200 ${
-          controlsVisible ? 'opacity-100' : 'opacity-0'
+          controlsVisible && !hideHeader ? 'opacity-100' : 'opacity-0'
         }`}
-        style={{ pointerEvents: controlsInteractive ? 'auto' : 'none' }}
+        style={{ pointerEvents: controlsInteractive && !hideHeader ? 'auto' : 'none' }}
       >
         {/* Ancho angosto (360px): Volver/título/% siempre entran en la
             primera fila (shrink-0 en los fijos, min-w-0+truncate en el
@@ -1070,6 +1089,7 @@ function TeleprompterSession({
           <SignalIndicator
             center={effectiveSettings.readingZone.center}
             onChange={(center) => handleLiveSettingsChange({ readingZone: { ...effectiveSettings.readingZone, center } })}
+            onDraggingChange={setSignalDragging}
           />
         )}
         {editMode === 'margins' && (
@@ -1087,9 +1107,9 @@ function TeleprompterSession({
           <select> de perfil con su desplegable abierto en desktop). */}
       <div
         className={`absolute inset-x-0 bottom-0 z-20 transition-opacity duration-200 ${
-          controlsVisible ? 'opacity-100' : 'opacity-0'
+          controlsVisible && !hideFooterEntirely ? 'opacity-100' : 'opacity-0'
         }`}
-        style={{ pointerEvents: controlsInteractive ? 'auto' : 'none' }}
+        style={{ pointerEvents: controlsInteractive && !hideFooterEntirely ? 'auto' : 'none' }}
       >
         {showSaveAsNewProfileDialog && (
           <PromptDialog

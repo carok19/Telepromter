@@ -33,13 +33,17 @@ import { CALIBRATION_RANGES } from '../../engine/calibrationEngine'
 interface SignalIndicatorProps {
   center: number
   onChange: (center: number) => void
+  // El Teleprompter lo usa para ocultar header/footer por completo mientras
+  // dura el arrastre (misma idea que `adjusting` en SettingsSheet: solo
+  // debe quedar el texto y lo que se está tocando).
+  onDraggingChange?: (dragging: boolean) => void
 }
 
 function stopPropagation(e: TouchEvent | MouseEvent) {
   e.stopPropagation()
 }
 
-export function SignalIndicator({ center, onChange }: SignalIndicatorProps) {
+export function SignalIndicator({ center, onChange, onDraggingChange }: SignalIndicatorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [dragging, setDragging] = useState(false)
 
@@ -55,6 +59,7 @@ export function SignalIndicator({ center, onChange }: SignalIndicatorProps) {
     e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
     setDragging(true)
+    onDraggingChange?.(true)
     onChange(percentFromClientY(e.clientY))
   }
 
@@ -67,6 +72,7 @@ export function SignalIndicator({ center, onChange }: SignalIndicatorProps) {
   function stopDragging(e: ReactPointerEvent<HTMLDivElement>) {
     e.stopPropagation()
     setDragging(false)
+    onDraggingChange?.(false)
   }
 
   return (
@@ -105,7 +111,7 @@ export function SignalIndicator({ center, onChange }: SignalIndicatorProps) {
         // margen del texto (maxWidth/offsetX) varía según la calibración,
         // así que un valor fijo es lo único que garantiza separación en
         // cualquier configuración razonable.
-        className="absolute left-[10px] -translate-y-1/2 touch-none py-8 pr-8"
+        className="absolute left-[10px] -translate-y-1/2 touch-none py-9 pr-9"
       >
         {/* Solo el triángulo (sin la barra que tenía antes) — se agranda
             mientras se arrastra, para que quede claro qué se está
@@ -121,9 +127,9 @@ export function SignalIndicator({ center, onChange }: SignalIndicatorProps) {
             style={{
               width: 0,
               height: 0,
-              borderTop: '16px solid transparent',
-              borderBottom: '16px solid transparent',
-              borderLeft: '22px solid rgba(160,160,160,0.65)',
+              borderTop: '22px solid transparent',
+              borderBottom: '22px solid transparent',
+              borderLeft: '30px solid rgba(160,160,160,0.65)',
               filter: 'drop-shadow(0 0 1.5px rgba(0,0,0,0.65)) drop-shadow(0 0 1.5px rgba(255,255,255,0.3))',
             }}
           />
