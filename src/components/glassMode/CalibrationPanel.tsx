@@ -111,6 +111,30 @@ export function CalibrationPanel({ settings, onChange }: CalibrationPanelProps) 
         </label>
       </Section>
 
+      <Section title="Zona de lectura">
+        <label className="flex items-center justify-between text-xs text-gray-400">
+          <span>Mostrar guías</span>
+          <input
+            type="checkbox"
+            checked={settings.readingZone.enabled}
+            onChange={(e) => onChange({ readingZone: { ...settings.readingZone, enabled: e.target.checked } })}
+            className="h-4 w-4 accent-accent"
+          />
+        </label>
+        <Slider
+          label="Posición"
+          value={settings.readingZone.center}
+          {...CALIBRATION_RANGES.readingZoneCenter}
+          onChange={(center) => onChange({ readingZone: { ...settings.readingZone, center } })}
+        />
+        <Slider
+          label="Alto de la franja"
+          value={settings.readingZone.height}
+          {...CALIBRATION_RANGES.readingZoneHeight}
+          onChange={(height) => onChange({ readingZone: { ...settings.readingZone, height } })}
+        />
+      </Section>
+
       <Section title="Imagen">
         <Slider
           label="Brillo"

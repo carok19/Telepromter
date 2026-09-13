@@ -617,6 +617,29 @@ export function RemoteControlPage() {
     calibration?.lineHeight ?? DEFAULT_CALIBRATION.lineHeight,
     sendCalibration,
   )
+  const readingZoneCenterStepper = useOptimisticCalibrationStepper(
+    'readingZoneCenter',
+    CALIBRATION_RANGES.readingZoneCenter.step,
+    0,
+    { min: CALIBRATION_RANGES.readingZoneCenter.min, max: CALIBRATION_RANGES.readingZoneCenter.max },
+    calibration?.readingZoneCenter ?? DEFAULT_CALIBRATION.readingZone.center,
+    sendCalibration,
+  )
+  const readingZoneHeightStepper = useOptimisticCalibrationStepper(
+    'readingZoneHeight',
+    CALIBRATION_RANGES.readingZoneHeight.step,
+    0,
+    { min: CALIBRATION_RANGES.readingZoneHeight.min, max: CALIBRATION_RANGES.readingZoneHeight.max },
+    calibration?.readingZoneHeight ?? DEFAULT_CALIBRATION.readingZone.height,
+    sendCalibration,
+  )
+  // readingZoneEnabled viaja como 0|1 (ver el comentario de
+  // CALIBRATION_PARAMS en remoteSession.ts) — acá se lee/escribe como
+  // boolean, la conversión queda contenida en este único punto.
+  const readingZoneEnabled = calibration?.readingZoneEnabled ?? DEFAULT_CALIBRATION.readingZone.enabled
+  function toggleReadingZoneEnabled() {
+    sendCalibration('readingZoneEnabled', readingZoneEnabled ? 0 : 1)
+  }
 
   const playback = session?.playback ?? null
   const engineStatus = playback?.engineStatus ?? 'ready'
@@ -1016,6 +1039,36 @@ export function RemoteControlPage() {
                         </button>
                       )
                     })}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1 flex items-center justify-between">
+                    <p className="text-xs text-gray-400">Zona de lectura</p>
+                    <button
+                      type="button"
+                      disabled={controlsDisabled}
+                      onClick={toggleReadingZoneEnabled}
+                      className={`rounded px-2 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                        readingZoneEnabled ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}` : 'text-gray-400 hover:text-gray-100'
+                      }`}
+                    >
+                      {readingZoneEnabled ? 'Activada' : 'Desactivada'}
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <CalibrationStepperRow
+                      label="Posición"
+                      unit="%"
+                      disabled={controlsDisabled}
+                      stepper={readingZoneCenterStepper}
+                    />
+                    <CalibrationStepperRow
+                      label="Alto de la franja"
+                      unit="%"
+                      disabled={controlsDisabled}
+                      stepper={readingZoneHeightStepper}
+                    />
                   </div>
                 </div>
               </div>

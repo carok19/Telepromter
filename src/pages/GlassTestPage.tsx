@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { CalibrationPanel } from '../components/glassMode/CalibrationPanel'
 import { GlassTestPattern } from '../components/glassMode/GlassTestPattern'
 import { MirrorModeSelector } from '../components/glassMode/MirrorModeSelector'
+import { ReadingZoneGuides } from '../components/teleprompter/ReadingZoneGuides'
 import { ConfirmDialog } from '../components/shared/ConfirmDialog'
 import { PromptDialog } from '../components/shared/PromptDialog'
 import { DEFAULT_CALIBRATION, getEffectiveColors, type CalibrationSettings } from '../engine/calibrationEngine'
@@ -84,6 +85,18 @@ export function GlassTestPage() {
         <div className="flex min-h-full items-center justify-center p-8">
           <GlassTestPattern settings={settings} />
         </div>
+
+        {/* A diferencia del Teleprompter, acá no hay "modo de ajuste"
+            separado ni ocultado automático que proteger — Prueba de vidrio
+            ya es una pantalla de calibración tranquila, así que las guías
+            son arrastrables directamente en cuanto están activadas. */}
+        {settings.readingZone.enabled && (
+          <ReadingZoneGuides
+            zone={settings.readingZone}
+            onChange={(readingZone) => handleChange({ readingZone })}
+            interactive
+          />
+        )}
       </div>
 
       <div className="flex flex-col border-t border-white/10 lg:h-screen lg:w-96 lg:shrink-0 lg:overflow-y-auto lg:border-l lg:border-t-0">

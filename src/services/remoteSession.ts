@@ -128,7 +128,23 @@ export interface RemoteCommand {
 // ---------------------------------------------------------------------
 // F8.4 parte B: ajustes de calibración en vivo desde el remoto.
 // ---------------------------------------------------------------------
-const CALIBRATION_PARAMS = ['fontSize', 'maxWidth', 'lineHeight', 'mirror', 'textAlign'] as const
+// readingZoneEnabled/Center/Height: la Zona de lectura vive en
+// CalibrationSettings como un objeto anidado (`readingZone: {enabled,
+// center, height}`), pero el protocolo remoto (como el resto de estos
+// params) es plano — quien aplica el comando (TeleprompterPage) sabe
+// mapear estos tres a `readingZone.*`. readingZoneEnabled viaja como
+// número (0|1), no boolean: `RemoteCommand.value` solo admite
+// `number | string`, igual que el resto de los params de acá.
+const CALIBRATION_PARAMS = [
+  'fontSize',
+  'maxWidth',
+  'lineHeight',
+  'mirror',
+  'textAlign',
+  'readingZoneEnabled',
+  'readingZoneCenter',
+  'readingZoneHeight',
+] as const
 export type CalibrationParam = (typeof CALIBRATION_PARAMS)[number]
 
 const MIRROR_VALUES: readonly MirrorMode[] = ['none', 'horizontal', 'vertical']
@@ -143,6 +159,9 @@ export interface RemoteCalibration {
   lineHeight: number
   textAlign: TextAlign
   mirror: MirrorMode
+  readingZoneEnabled: boolean
+  readingZoneCenter: number
+  readingZoneHeight: number
   updatedAt: number
 }
 
@@ -168,7 +187,14 @@ export function validateCalibrationCommand(
       ? { param: validParam, value: value as TextAlign }
       : null
   }
-  // Numérico: fontSize | maxWidth | lineHeight.
+  // readingZoneEnabled es el único booleano del protocolo — viaja como 0|1
+  // (no boolean: ver el comentario de CALIBRATION_PARAMS) y se valida
+  // exigiendo exactamente uno de esos dos números, nunca "cualquier
+  // truthy/falsy".
+  if (validParam === 'readingZoneEnabled') {
+    return value === 0 || value === 1 ? { param: validParam, value } : null
+  }
+  // Numérico: fontSize | maxWidth | lineHeight | readingZoneCenter | readingZoneHeight.
   if (typeof value !== 'number' || !Number.isFinite(value)) return null
   const range = CALIBRATION_RANGES[validParam]
   return { param: validParam, value: Math.min(range.max, Math.max(range.min, value)) }

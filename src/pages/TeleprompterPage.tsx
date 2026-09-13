@@ -9,8 +9,11 @@ import {
   getTextAlignOverrideCss,
   TEXT_ALIGN_OVERRIDE_CLASS,
   type CalibrationSettings,
+  type ReadingZone,
 } from '../engine/calibrationEngine'
 import { LiveSettingsPanel } from '../components/teleprompter/LiveSettingsPanel'
+import { MarginGuides } from '../components/teleprompter/MarginGuides'
+import { ReadingZoneGuides } from '../components/teleprompter/ReadingZoneGuides'
 import { PairingModal } from '../components/remote/PairingModal'
 import { PromptDialog } from '../components/shared/PromptDialog'
 import { db, type FolderRecord, type ScriptRecord } from '../db/db'
@@ -34,7 +37,7 @@ import {
 import { usePlayerStore } from '../stores/playerStore'
 import { useProfilesStore } from '../stores/profilesStore'
 import { useRemoteStore } from '../stores/remoteStore'
-import { ACCENT_BG, ACCENT_BG_HOVER, FONT_DISPLAY, ON_ACCENT } from '../styles/tokens'
+import { ACCENT_BG, ACCENT_BG_HOVER, ACCENT_SOFT_BG, ACCENT_TEXT, FONT_DISPLAY, ON_ACCENT } from '../styles/tokens'
 
 // Recuerda el último perfil elegido para el teleprompter entre sesiones. Es
 // una preferencia liviana de UI (un id), no datos del dominio — se guarda en
@@ -343,6 +346,18 @@ function TeleprompterSession({
   const refreshRemoteUid = useRemoteStore((s) => s.refreshRemoteUid)
   const [settingsPanelOpen, setSettingsPanelOpen] = useState(false)
   const [showSaveAsNewProfileDialog, setShowSaveAsNewProfileDialog] = useState(false)
+  // Modo de ajuste directo (márgenes / zona de lectura, ver MarginGuides y
+  // ReadingZoneGuides): se entra a propósito desde un botón del panel de
+  // Ajustes, nunca con un toque suelto sobre el texto. Mientras está
+  // activo, el footer deja de mostrar los controles de reproducción (✓/✕
+  // los reemplazan) y el ocultado automático queda suspendido (ver
+  // controlsVisible más abajo) — el modo en sí no pausa ni reanuda nada.
+  const [editMode, setEditMode] = useState<'none' | 'margins' | 'readingZone'>('none')
+  // Snapshot de ANTES de entrar al modo, para que ✕ pueda restaurarlo tal
+  // cual — no alcanza con "no tocar nada mientras se arrastra", porque
+  // arrastrar sí aplica en vivo (para ver el efecto mientras se ajusta).
+  const preEditMaxWidthRef = useRef<number | null>(null)
+  const preEditReadingZoneRef = useRef<ReadingZone | null>(null)
   // B.1: se inicializa con el commandId YA VISTO (si `remoteSession` llega
   // con uno, porque este componente se está remontando tras un cambio de
   // guion con la sesión todavía viva) en vez de `null` — si no, el guard de
@@ -367,11 +382,14 @@ function TeleprompterSession({
 
   // Nunca se ocultan mientras: hay un modal de emparejamiento abierto, hay
   // un error de control remoto visible, algún control del footer (p. ej.
-  // el <select> de perfil con su desplegable abierto) tiene el foco, o el
-  // panel de ajustes en vivo está abierto. El estado "pausado" NO fuerza
-  // los controles visibles a propósito — se trata como cualquier otro
-  // estado de reproducción.
-  const controlsVisible = !idle || showPairingModal || remoteError != null || footerHasFocus || settingsPanelOpen
+  // el <select> de perfil con su desplegable abierto) tiene el foco, el
+  // panel de ajustes en vivo está abierto, o hay un modo de ajuste directo
+  // en curso (márgenes/zona de lectura: se necesita ver ✓/✕ y el resultado
+  // del arrastre todo el tiempo, no que se oculte a los 3 segundos). El
+  // estado "pausado" NO fuerza los controles visibles a propósito — se
+  // trata como cualquier otro estado de reproducción.
+  const controlsVisible =
+    !idle || showPairingModal || remoteError != null || footerHasFocus || settingsPanelOpen || editMode !== 'none'
 
   // TOQUE FANTASMA: si el mismo toque que revela los controles (touchstart)
   // también generara su click sobre un botón recién aparecido (p. ej. Play),
@@ -496,6 +514,55 @@ function TeleprompterSession({
     applyLiveSettings({ ...(liveSettings ?? DEFAULT_CALIBRATION), ...patch })
   }
 
+  // Modo márgenes: guarda el maxWidth de antes de entrar (para que ✕ lo
+  // restaure) y cierra el panel de Ajustes — el footer pasa a mostrar ✓/✕
+  // en su lugar (ver el JSX del footer más abajo).
+  function enterMarginsEdit() {
+    preEditMaxWidthRef.current = (liveSettings ?? DEFAULT_CALIBRATION).maxWidth
+    setSettingsPanelOpen(false)
+    setEditMode('margins')
+  }
+
+  // Modo zona de lectura: además de guardar el snapshot, la activa de
+  // inmediato (¿de qué serviría arrastrar algo invisible?) — si el usuario
+  // cancela, ✕ restaura también el `enabled` de antes, no solo la posición.
+  function enterReadingZoneEdit() {
+    const current = (liveSettings ?? DEFAULT_CALIBRATION).readingZone
+    preEditReadingZoneRef.current = current
+    handleLiveSettingsChange({ readingZone: { ...current, enabled: true } })
+    setSettingsPanelOpen(false)
+    setEditMode('readingZone')
+  }
+
+  // ✓ aplica: el valor ya está aplicado en vivo (se ve mientras se
+  // arrastra) — confirmar solo significa "salir del modo, quedarse con
+  // esto". Igual que el resto de los ajustes en vivo, no se guarda en el
+  // perfil hasta tocar "Guardar en perfil" aparte.
+  function confirmEdit() {
+    setEditMode('none')
+  }
+
+  // ✕ vuelve al valor anterior: restaura el snapshot completo (incluido
+  // `enabled` en el caso de la zona de lectura) y sale del modo.
+  function cancelEdit() {
+    if (editMode === 'margins' && preEditMaxWidthRef.current != null) {
+      handleLiveSettingsChange({ maxWidth: preEditMaxWidthRef.current })
+    } else if (editMode === 'readingZone' && preEditReadingZoneRef.current != null) {
+      handleLiveSettingsChange({ readingZone: preEditReadingZoneRef.current })
+    }
+    setEditMode('none')
+  }
+
+  // Activar/desactivar la zona de lectura de un toque, sin entrar al panel
+  // — las guías se reflejan en el vidrio y puede que se quieran apagar a
+  // mitad de una grabación (a diferencia del modo de ajuste, esto NO
+  // suspende el ocultado automático ni congela los demás controles: es un
+  // botón más del footer, como Reiniciar o Ajustes).
+  function toggleReadingZoneEnabled() {
+    const current = (liveSettings ?? DEFAULT_CALIBRATION).readingZone
+    handleLiveSettingsChange({ readingZone: { ...current, enabled: !current.enabled } })
+  }
+
   // "Guardar en perfil": si hay un perfil elegido, sobreescribe sus valores;
   // si no ("Predeterminado" con ajustes en vivo), pide un nombre con
   // PromptDialog (ver su render más abajo) y crea uno nuevo — mismo patrón
@@ -520,6 +587,14 @@ function TeleprompterSession({
   // vieja/incorrecta antes de corregirse — por eso useLayoutEffect y no
   // useEffect.
   useLayoutEffect(() => {
+    // Zona de lectura: el motor necesita saber dónde pausar un marcador
+    // ANTES de remedir geometría — setReadingLineFraction por sí solo ya
+    // reconcilia los marcadores todavía no disparados contra la posición
+    // actual (ver el comentario de consumePassedCheckpoints en
+    // teleprompterEngine.ts): un marcador ya disparado nunca se revive, y
+    // uno cuyo punto de disparo quedó detrás de la posición actual se
+    // marca como visto sin pausar retroactivamente.
+    engine.setReadingLineFraction((liveSettings ?? DEFAULT_CALIBRATION).readingZone.center / 100)
     engine.recalculateGeometry()
     if (pendingProgressRef.current != null) {
       engine.seekToProgress(pendingProgressRef.current)
@@ -605,7 +680,23 @@ function TeleprompterSession({
     } else if (command.type === 'setCalibration') {
       const validated = validateCalibrationCommand(command.param, command.value)
       if (validated) {
-        applyLiveSettings({ ...(liveSettings ?? DEFAULT_CALIBRATION), [validated.param]: validated.value })
+        const base = liveSettings ?? DEFAULT_CALIBRATION
+        // readingZoneEnabled/Center/Height son un caso especial: el
+        // protocolo remoto los trata como tres params planos (mismo
+        // criterio que fontSize/maxWidth/etc.), pero en CalibrationSettings
+        // viven anidados bajo `readingZone` — no alcanza con
+        // `{[validated.param]: validated.value}` para esos tres, crearía
+        // una clave suelta en vez de actualizar `readingZone.center`, por
+        // ejemplo.
+        if (validated.param === 'readingZoneCenter') {
+          applyLiveSettings({ ...base, readingZone: { ...base.readingZone, center: validated.value as number } })
+        } else if (validated.param === 'readingZoneHeight') {
+          applyLiveSettings({ ...base, readingZone: { ...base.readingZone, height: validated.value as number } })
+        } else if (validated.param === 'readingZoneEnabled') {
+          applyLiveSettings({ ...base, readingZone: { ...base.readingZone, enabled: validated.value === 1 } })
+        } else {
+          applyLiveSettings({ ...base, [validated.param]: validated.value })
+        }
       }
     } else if (command.type === 'loadScript') {
       // B.2: comando validado solo en su forma (parseScriptIdCommand exige
@@ -734,6 +825,9 @@ function TeleprompterSession({
       lineHeight: settings.lineHeight,
       textAlign: settings.textAlign,
       mirror: settings.mirror,
+      readingZoneEnabled: settings.readingZone.enabled,
+      readingZoneCenter: settings.readingZone.center,
+      readingZoneHeight: settings.readingZone.height,
       updatedAt: Date.now(),
     })
   }, [remoteSessionId, remoteSession?.remoteConnected, liveSettings, publishCalibration])
@@ -952,6 +1046,28 @@ function TeleprompterSession({
             )}
           </div>
         </div>
+
+        {/* Zona de lectura y márgenes: fuera del wrapper de arriba a
+            propósito (ver los comentarios de ReadingZoneGuides/MarginGuides)
+            — ninguna de las dos debe invertirse con el espejo ni oscurecerse
+            con el brillo/contraste calibrados. Pasiva (interactive=false)
+            fuera del modo de ajuste: se ve como referencia pero no responde
+            a ningún puntero, así que arrastrar el dedo sobre el texto para
+            otra cosa nunca la mueve por accidente. */}
+        {(effectiveSettings.readingZone.enabled || editMode === 'readingZone') && (
+          <ReadingZoneGuides
+            zone={effectiveSettings.readingZone}
+            onChange={(readingZone) => handleLiveSettingsChange({ readingZone })}
+            interactive={editMode === 'readingZone'}
+          />
+        )}
+        {editMode === 'margins' && (
+          <MarginGuides
+            maxWidth={effectiveSettings.maxWidth}
+            offsetX={effectiveSettings.offsetX}
+            onChange={(maxWidth) => handleLiveSettingsChange({ maxWidth })}
+          />
+        )}
       </div>
 
       {/* Overlay inferior: mismo motivo que el de arriba (absoluto, no
@@ -974,6 +1090,8 @@ function TeleprompterSession({
             onChange={handleLiveSettingsChange}
             onSave={handleSaveLiveSettingsToProfile}
             onClose={() => setSettingsPanelOpen(false)}
+            onAdjustMargins={enterMarginsEdit}
+            onAdjustReadingZone={enterReadingZoneEdit}
           />
         )}
         {showSaveAsNewProfileDialog && (
@@ -995,91 +1113,140 @@ function TeleprompterSession({
           onBlur={handleFooterBlur}
           className="flex flex-wrap items-center justify-between gap-4 border-t border-white/10 bg-[#0b0c10]/90 px-4 py-3 backdrop-blur-sm sm:px-6"
         >
-          {/* flex-wrap acá TAMBIÉN (no solo en el <footer>): los 4 botones
-              son un solo hijo del footer desde el punto de vista del
-              flex-wrap de arriba — si ESTE grupo no envuelve sus propios
-              botones, el grupo entero se desborda igual (confirmado con
-              "Control remoto" cortado a 360px), aunque el footer que lo
-              contiene sí sepa envolver grupos completos. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={togglePlay}
-              className={`${FONT_DISPLAY} rounded-md ${ACCENT_BG} px-4 py-2 text-sm font-medium ${ON_ACCENT} ${ACCENT_BG_HOVER}`}
-            >
-              {playLabel}
-            </button>
-            <button
-              type="button"
-              onClick={resetPlayback}
-              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
-            >
-              Reiniciar
-            </button>
-            <button
-              type="button"
-              onClick={() => setSettingsPanelOpen((v) => !v)}
-              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
-            >
-              Ajustes
-            </button>
-            <button
-              type="button"
-              onClick={() => onRemoteControlClick(script.title || 'Sin título')}
-              disabled={!remoteConfigured}
-              title={!remoteConfigured ? 'Control remoto no disponible en este momento.' : undefined}
-              className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {!remoteSessionId
-                ? 'Control remoto'
-                : remoteSession?.status === 'ended'
-                  ? 'Sesión cerrada'
-                  : remoteSession?.remoteConnected
-                    ? 'Remoto conectado'
-                    : 'Esperando remoto…'}
-            </button>
-            {remoteError && <span className="basis-full text-xs text-red-400">{remoteError}</span>}
-          </div>
+          {editMode !== 'none' ? (
+            // Modo de ajuste directo: reemplaza TODO el footer normal — los
+            // controles de reproducción no están (no solo "deshabilitados":
+            // ni siquiera se renderizan, así que literalmente no responden a
+            // nada) mientras se arrastra. ✓/✕ son los únicos controles.
+            <div className="flex w-full items-center justify-between gap-3">
+              <span className="text-sm font-medium text-gray-200">
+                {editMode === 'margins' ? 'Ajustando márgenes' : 'Ajustando zona de lectura'}
+              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  aria-label="Cancelar, volver al valor anterior"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-gray-300 hover:bg-white/5"
+                >
+                  ✕
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmEdit}
+                  aria-label="Aplicar"
+                  className={`flex h-9 w-9 items-center justify-center rounded-md ${ACCENT_BG} ${ON_ACCENT} ${ACCENT_BG_HOVER}`}
+                >
+                  ✓
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* flex-wrap acá TAMBIÉN (no solo en el <footer>): los botones
+                  son un solo hijo del footer desde el punto de vista del
+                  flex-wrap de arriba — si ESTE grupo no envuelve sus propios
+                  botones, el grupo entero se desborda igual (confirmado con
+                  "Control remoto" cortado a 360px), aunque el footer que lo
+                  contiene sí sepa envolver grupos completos. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={togglePlay}
+                  className={`${FONT_DISPLAY} rounded-md ${ACCENT_BG} px-4 py-2 text-sm font-medium ${ON_ACCENT} ${ACCENT_BG_HOVER}`}
+                >
+                  {playLabel}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetPlayback}
+                  className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
+                >
+                  Reiniciar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsPanelOpen((v) => !v)}
+                  className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
+                >
+                  Ajustes
+                </button>
+                {/* Toggle rápido de la Zona de lectura: no entra al panel ni
+                    a ningún modo de ajuste, solo prende/apaga las guías —
+                    puede que se quieran apagar a mitad de una grabación
+                    porque se reflejan en el vidrio (ver el comentario de
+                    toggleReadingZoneEnabled). */}
+                <button
+                  type="button"
+                  onClick={toggleReadingZoneEnabled}
+                  aria-pressed={effectiveSettings.readingZone.enabled}
+                  className={`rounded-md px-3 py-2 text-sm transition-colors ${
+                    effectiveSettings.readingZone.enabled
+                      ? `${ACCENT_SOFT_BG} ${ACCENT_TEXT}`
+                      : 'border border-white/10 text-gray-300 hover:bg-white/5'
+                  }`}
+                >
+                  Zona
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemoteControlClick(script.title || 'Sin título')}
+                  disabled={!remoteConfigured}
+                  title={!remoteConfigured ? 'Control remoto no disponible en este momento.' : undefined}
+                  className="rounded-md border border-white/10 px-4 py-2 text-sm text-gray-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {!remoteSessionId
+                    ? 'Control remoto'
+                    : remoteSession?.status === 'ended'
+                      ? 'Sesión cerrada'
+                      : remoteSession?.remoteConnected
+                        ? 'Remoto conectado'
+                        : 'Esperando remoto…'}
+                </button>
+                {remoteError && <span className="basis-full text-xs text-red-400">{remoteError}</span>}
+              </div>
 
-          <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
-            <span>Velocidad (PPM)</span>
-            <input
-              type="number"
-              min={MIN_REMOTE_WPM}
-              max={MAX_REMOTE_WPM}
-              value={wpm}
-              onChange={(e) => setSpeed(Number(e.target.value) || DEFAULT_WPM)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur()
-              }}
-              className="w-16 shrink-0 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
-            />
-          </label>
+              <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
+                <span>Velocidad (PPM)</span>
+                <input
+                  type="number"
+                  min={MIN_REMOTE_WPM}
+                  max={MAX_REMOTE_WPM}
+                  value={wpm}
+                  onChange={(e) => setSpeed(Number(e.target.value) || DEFAULT_WPM)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                  }}
+                  className="w-16 shrink-0 rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
+                />
+              </label>
 
-          <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
-            <span>Perfil</span>
-            <select
-              value={selectedProfileId ?? ''}
-              onChange={(e) => {
-                handleSelectProfile(e.target.value)
-                e.target.blur()
-              }}
-              className="rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
-            >
-              <option value="">Predeterminado</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
+              <label className="flex shrink-0 items-center gap-2 text-xs text-gray-500">
+                <span>Perfil</span>
+                <select
+                  value={selectedProfileId ?? ''}
+                  onChange={(e) => {
+                    handleSelectProfile(e.target.value)
+                    e.target.blur()
+                  }}
+                  className="rounded border border-white/10 bg-[#0f1117] px-2 py-1 text-gray-200"
+                >
+                  <option value="">Predeterminado</option>
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
-            <div className={`h-full ${ACCENT_BG}`} style={{ width: `${Math.round(progress * 100)}%` }} />
-          </div>
+              <div className="h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
+                <div className={`h-full ${ACCENT_BG}`} style={{ width: `${Math.round(progress * 100)}%` }} />
+              </div>
 
-          <span className="text-xs text-gray-500">{statusLabel}</span>
+              <span className="text-xs text-gray-500">{statusLabel}</span>
+            </>
+          )}
         </footer>
       </div>
     </div>

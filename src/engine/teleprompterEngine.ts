@@ -38,10 +38,12 @@ export interface TeleprompterSnapshot {
 type Listener = (snapshot: TeleprompterSnapshot) => void
 
 // Fracción del alto del viewport que actúa como "línea de lectura" donde se
-// dispara una pausa automática. Todavía no existe un punto de lectura
-// configurable (llegará en una fase posterior); se usa el centro vertical
-// del área visible como valor por defecto razonable.
-const READING_LINE_FRACTION = 0.5
+// dispara una pausa automática. Configurable desde afuera (ver
+// setReadingLineFraction) — este es solo el valor inicial, igual al que
+// estaba hardcodeado antes de que existiera la Zona de lectura, para que un
+// guion sin ese ajuste (o un perfil viejo) pause exactamente donde ya
+// pausaba.
+const DEFAULT_READING_LINE_FRACTION = 0.5
 
 // Umbral mínimo entre notificaciones a los suscriptores mientras se
 // reproduce, para no disparar un render de React en cada frame de rAF.
@@ -54,6 +56,7 @@ export class TeleprompterEngine {
   private pxPerSecond = 0
   private wpm = DEFAULT_WPM
   private totalWords = 0
+  private readingLineFraction = DEFAULT_READING_LINE_FRACTION
   private readingLinePx = 0
 
   private viewportEl: HTMLElement | null = null
@@ -90,11 +93,41 @@ export class TeleprompterEngine {
   recalculateGeometry() {
     if (!this.viewportEl || !this.contentEl) return
     this.totalPx = Math.max(0, this.contentEl.scrollHeight - this.viewportEl.clientHeight)
-    this.readingLinePx = this.viewportEl.clientHeight * READING_LINE_FRACTION
+    this.readingLinePx = this.viewportEl.clientHeight * this.readingLineFraction
     this.checkpoints = findPauseCheckpoints(this.contentEl)
     this.recalcSpeed()
     this.positionPx = Math.min(this.positionPx, this.totalPx)
+    // Un resize (rotar el celular) reflowea el texto: el offsetTop de un
+    // marcador puede cambiar igual que si se hubiera movido la Zona de
+    // lectura — mismo saneamiento acá, ver consumePassedCheckpoints().
+    this.consumePassedCheckpoints()
     this.applyTransform()
+  }
+
+  // Zona de lectura: mueve la línea de lectura sin esperar a un resize —
+  // se puede arrastrar con la reproducción en curso. Seguro de llamar antes
+  // de attach() (`viewportEl` todavía null): solo guarda la fracción, que
+  // recalculateGeometry() ya usa apenas el motor se conecta.
+  setReadingLineFraction(fraction: number) {
+    this.readingLineFraction = Math.min(1, Math.max(0, fraction))
+    if (!this.viewportEl) return
+    this.readingLinePx = this.viewportEl.clientHeight * this.readingLineFraction
+    this.consumePassedCheckpoints()
+  }
+
+  // Mover la línea de lectura (o un resize) puede hacer que el punto de
+  // disparo de un marcador TODAVÍA NO disparado quede detrás de la posición
+  // actual — el usuario movió la zona más allá de donde ya se scrolleó. Se
+  // lo marca como ya visto SIN pausar retroactivamente: forzar una pausa en
+  // un punto que la pantalla ya dejó atrás confundiría más de lo que
+  // ayudaría. Un marcador YA disparado nunca se toca acá — mover la zona no
+  // lo revive ni lo dispara una segunda vez.
+  private consumePassedCheckpoints() {
+    for (const checkpoint of this.checkpoints) {
+      if (this.triggeredMarkers.has(checkpoint.element)) continue
+      const triggerPx = Math.max(0, checkpoint.offsetTop - this.readingLinePx)
+      if (triggerPx <= this.positionPx) this.triggeredMarkers.add(checkpoint.element)
+    }
   }
 
   setSpeed(wpm: number) {

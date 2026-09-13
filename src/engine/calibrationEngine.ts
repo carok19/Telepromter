@@ -18,6 +18,23 @@ export type FontWeight = 'light' | 'regular' | 'medium' | 'semibold' | 'bold'
 // tiene más especificidad que cualquier regla heredada.
 export type TextAlign = 'script' | 'left' | 'center' | 'right'
 
+// Zona de lectura: la franja de la pantalla donde el usuario efectivamente
+// mira (detrás del vidrio, según cómo esté montado el rig). `center`/`height`
+// son PORCENTAJES del alto del viewport (0-100, 0 = arriba, 100 = abajo) —
+// mismo criterio que `maxWidth`, no px, para comportarse igual en cualquier
+// tamaño de pantalla. `enabled` controla si las dos guías se DIBUJAN como
+// referencia pasiva; el usuario puede arrastrarlas (ver ReadingZoneGuides,
+// modo de ajuste directo desde el Teleprompter) sin que eso dependa de
+// `enabled` — de hecho, ajustar la posición mientras las guías están
+// ocultas sigue siendo útil, porque `center` también determina dónde pausan
+// los marcadores automáticos (ver TeleprompterEngine.setReadingLineFraction),
+// con o sin guías visibles.
+export interface ReadingZone {
+  enabled: boolean
+  center: number
+  height: number
+}
+
 export interface GhostCompensation {
   enabled: boolean
   // Desplazamiento de la segunda copia respecto al texto principal, en px.
@@ -75,6 +92,12 @@ export interface CalibrationSettings {
   // alguna combinación reduce la percepción del doble reflejo. Opcional,
   // independiente del resto del perfil, y desactivable por completo.
   ghostCompensation: GhostCompensation
+  // Un perfil guardado ANTES de que este campo existiera no lo trae — se
+  // completa con DEFAULT_CALIBRATION.readingZone (center: 50%) en todos
+  // lados vía `{...DEFAULT_CALIBRATION, ...perfilViejo}`, que es EXACTAMENTE
+  // la fracción que TeleprompterEngine ya usaba hardcodeada — un perfil
+  // viejo pausa en el mismo lugar de siempre, sin ninguna migración.
+  readingZone: ReadingZone
 }
 
 export const DEFAULT_CALIBRATION: CalibrationSettings = {
@@ -99,6 +122,11 @@ export const DEFAULT_CALIBRATION: CalibrationSettings = {
     opacity2: 30,
     intensity2: 100,
     blur2: 1,
+  },
+  readingZone: {
+    enabled: false,
+    center: 50,
+    height: 16,
   },
 }
 
@@ -130,6 +158,11 @@ export const CALIBRATION_RANGES = {
   ghostOpacity: { min: 0, max: 100, step: 5, unit: '%' },
   ghostIntensity: { min: 50, max: 200, step: 5, unit: '%' },
   ghostBlur: { min: 0, max: 5, step: 0.5, unit: 'px' },
+  // 10-90: deja un margen mínimo contra los bordes del viewport (una zona
+  // pegada al borde no tendría sentido como "dónde mirar"). 4-40: el alto
+  // de la franja — de una línea angosta a casi media pantalla.
+  readingZoneCenter: { min: 10, max: 90, step: 2, unit: '%' },
+  readingZoneHeight: { min: 4, max: 40, step: 2, unit: '%' },
 } as const
 
 export function getEffectiveColors(settings: CalibrationSettings): { text: string; background: string } {
@@ -192,6 +225,22 @@ export function buildCalibrationStyle(settings: CalibrationSettings): CSSPropert
 // del texto principal. La ORIENTACIÓN del texto del ghost (reflejado o no)
 // no cambia: sigue determinada enteramente por el mirror heredado del
 // padre, ya que este nodo no aplica ningún scale propio.
+// Zona de lectura: dos líneas horizontales (arriba/abajo de la franja),
+// expresadas como % del alto del viewport — el mismo % sirve tanto para
+// posicionar las guías (CSS `top`, ver ReadingZoneGuides) como para que el
+// motor calcule en qué punto de scroll dispara un marcador de pausa (ver
+// TeleprompterEngine.setReadingLineFraction). Clampeado para que la franja
+// nunca se salga del viewport aunque `center`/`height` vengan de un comando
+// remoto en una combinación rara (p. ej. `center` cerca de un borde con una
+// `height` grande).
+export function getReadingZoneLines(zone: ReadingZone): { topPercent: number; bottomPercent: number } {
+  const half = zone.height / 2
+  return {
+    topPercent: Math.max(0, Math.min(100, zone.center - half)),
+    bottomPercent: Math.max(0, Math.min(100, zone.center + half)),
+  }
+}
+
 export function buildGhostLayerStyle(settings: CalibrationSettings): CSSProperties | null {
   const ghost = settings.ghostCompensation
   if (!ghost.enabled) return null
