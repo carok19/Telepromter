@@ -13,6 +13,7 @@ import {
   SURFACE,
   SURFACE_HOVER,
   SURFACE_RAISED,
+  SURFACE_SHADOW,
   TEXT_FAINT,
   TEXT_MUTED,
 } from '../../styles/tokens'
@@ -79,7 +80,7 @@ export function ScriptCard({
     // 360px competía por espacio con el título.
     <div
       onClick={onOpenTeleprompter}
-      className={`group relative cursor-pointer ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} p-3.5 transition-colors ${SURFACE_HOVER}`}
+      className={`group relative cursor-pointer ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} ${SURFACE_SHADOW} p-3.5 transition-colors ${SURFACE_HOVER}`}
     >
       <div className="flex items-start justify-between gap-3">
         {/* min-w-0 es lo que permite que title/preview trunquen en vez de

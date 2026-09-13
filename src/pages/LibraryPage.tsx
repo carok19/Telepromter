@@ -27,6 +27,7 @@ import {
   SEGMENTED_TRACK,
   SURFACE,
   SURFACE_HOVER,
+  SURFACE_SHADOW,
   TEXT_FAINT,
   TEXT_MUTED,
   SCREEN_TITLE,
@@ -145,7 +146,7 @@ export function LibraryPage() {
           type="button"
           onClick={() => navigate('/configuracion')}
           aria-label="Configuración"
-          className={`flex h-9 w-9 items-center justify-center rounded-full ${SURFACE} ${TEXT_MUTED} ${SURFACE_HOVER}`}
+          className={`flex h-9 w-9 items-center justify-center rounded-full ${SURFACE} ${SURFACE_BORDER} ${TEXT_MUTED} ${SURFACE_HOVER}`}
         >
           <SettingsIcon className="h-4 w-4" />
         </button>
@@ -218,7 +219,7 @@ export function LibraryPage() {
                 key={result.id}
                 type="button"
                 onClick={() => navigate(`/teleprompter/${result.id}`)}
-                className={`flex items-center gap-3 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} px-4 py-3 text-left transition-colors ${SURFACE_HOVER}`}
+                className={`flex items-center gap-3 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} ${SURFACE_SHADOW} px-4 py-3 text-left transition-colors ${SURFACE_HOVER}`}
               >
                 <FileTextIcon className={`h-4 w-4 shrink-0 ${TEXT_MUTED}`} />
                 <span className={`min-w-0 flex-1 truncate text-sm text-white ${FONT_DISPLAY}`}>{result.title}</span>

@@ -10,8 +10,9 @@ import { FilePlusIcon, FolderPlusIcon, PlusIcon } from './Icons'
 import { ACCENT_BG, ACCENT_BG_HOVER, ON_ACCENT, RADIUS_MENU, SURFACE_RAISED } from '../../styles/tokens'
 
 // Sombra suave con el tono del acento (no gris genérico): mismo warm
-// amber que el resto de la marca, apenas insinuado detrás del FAB.
-const FAB_SHADOW = 'shadow-[0_8px_24px_rgba(242,169,59,0.45)]'
+// amber que el resto de la marca, apenas insinuado detrás del FAB — un
+// levantamiento sutil, no un halo/glow.
+const FAB_SHADOW = 'shadow-[0_4px_14px_rgba(242,169,59,0.3)]'
 
 interface FabMenuProps {
   onNewScript: () => void

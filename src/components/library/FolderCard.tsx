@@ -1,5 +1,14 @@
 import { FolderIcon } from '../shared/Icons'
-import { FONT_DISPLAY, RADIUS_CARD, SURFACE, SURFACE_BORDER, SURFACE_HOVER, TEXT_FAINT, TEXT_MUTED } from '../../styles/tokens'
+import {
+  FONT_DISPLAY,
+  RADIUS_CARD,
+  SURFACE,
+  SURFACE_BORDER,
+  SURFACE_HOVER,
+  SURFACE_SHADOW,
+  TEXT_FAINT,
+  TEXT_MUTED,
+} from '../../styles/tokens'
 
 interface FolderCardProps {
   name: string
@@ -17,7 +26,7 @@ export function FolderCard({ name, scriptCount, draftCount, updatedLabel, onOpen
     <button
       type="button"
       onClick={onOpen}
-      className={`flex h-[128px] flex-col items-center justify-center gap-2 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} px-3 text-center transition-colors ${SURFACE_HOVER}`}
+      className={`flex h-[128px] flex-col items-center justify-center gap-2 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} ${SURFACE_SHADOW} px-3 text-center transition-colors ${SURFACE_HOVER}`}
     >
       <FolderIcon className="h-8 w-8 text-gray-300" />
       <div className="w-full min-w-0">
