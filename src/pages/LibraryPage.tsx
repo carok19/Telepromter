@@ -17,7 +17,6 @@ import { formatRelativeDate } from '../engine/relativeDate'
 import { useScriptsStore } from '../stores/scriptsStore'
 import {
   SURFACE_BORDER,
-  FONT_DISPLAY,
   GRID_GAP,
   PAGE,
   RADIUS_CARD,
@@ -27,7 +26,6 @@ import {
   SEGMENTED_TRACK,
   SURFACE,
   SURFACE_HOVER,
-  SURFACE_SHADOW,
   TEXT_FAINT,
   TEXT_MUTED,
   SCREEN_TITLE,
@@ -194,35 +192,49 @@ export function LibraryPage() {
       )}
 
       {visibleFolders.length > 0 && (
-        <div className={`grid grid-cols-2 ${GRID_GAP}`}>
-          {visibleFolders.map((folder) => (
-            <FolderCard
-              key={folder.folderId ?? 'sin-carpeta'}
-              name={folder.name}
-              scriptCount={folder.scriptCount}
-              draftCount={folder.draftCount}
-              updatedLabel={folder.updatedAt ? formatRelativeDate(folder.updatedAt) : null}
-              onOpen={() => navigate(`/guiones/${folder.folderId ?? 'sin-carpeta'}`)}
-            />
-          ))}
-        </div>
+        <>
+          {/* Handoff: encabezado "CARPETAS" sobre la cuadrícula — sin el
+              link "Nueva" que traía el mockup al lado (queda solo el FAB
+              para crear, ver FabMenu). */}
+          <p className={`mb-2.5 text-xs font-semibold tracking-[0.7px] uppercase ${TEXT_MUTED}`}>Carpetas</p>
+          <div className={`grid grid-cols-2 ${GRID_GAP}`}>
+            {visibleFolders.map((folder) => (
+              <FolderCard
+                key={folder.folderId ?? 'sin-carpeta'}
+                name={folder.name}
+                scriptCount={folder.scriptCount}
+                draftCount={folder.draftCount}
+                updatedLabel={folder.updatedAt ? formatRelativeDate(folder.updatedAt) : null}
+                onOpen={() => navigate(`/guiones/${folder.folderId ?? 'sin-carpeta'}`)}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {term && (
         <div className="mt-5">
-          <p className={`mb-2.5 text-xs font-semibold tracking-wide uppercase ${TEXT_FAINT}`}>
+          <p className={`mb-2.5 text-xs font-semibold tracking-[0.7px] uppercase ${TEXT_FAINT}`}>
             {matchingScripts.length > 0 ? 'Guiones encontrados' : 'Sin guiones encontrados'}
           </p>
-          <div className="flex flex-col gap-2">
-            {matchingScripts.map((result) => (
+          {/* Handoff: filas agrupadas en UNA tarjeta con separadores finos
+              entre ellas (ícono en círculo tenue del acento + título +
+              badge de carpeta), no una tarjeta suelta por fila — mismo
+              patrón que usa el diseño para cualquier lista de guiones. */}
+          <div className={`${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} overflow-hidden`}>
+            {matchingScripts.map((result, index) => (
               <button
                 key={result.id}
                 type="button"
                 onClick={() => navigate(`/teleprompter/${result.id}`)}
-                className={`flex items-center gap-3 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} ${SURFACE_SHADOW} px-4 py-3 text-left transition-colors ${SURFACE_HOVER}`}
+                className={`flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors ${SURFACE_HOVER} ${
+                  index > 0 ? 'border-t border-white/[0.07]' : ''
+                }`}
               >
-                <FileTextIcon className={`h-4 w-4 shrink-0 ${TEXT_MUTED}`} />
-                <span className={`min-w-0 flex-1 truncate text-sm text-white ${FONT_DISPLAY}`}>{result.title}</span>
+                <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-accent/[0.14]">
+                  <FileTextIcon className="h-4 w-4 text-accent" />
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[16px] font-medium tracking-[-0.3px] text-white">{result.title}</span>
                 <span className={`shrink-0 rounded-full bg-white/5 px-2 py-0.5 text-[11px] ${TEXT_MUTED}`}>
                   {result.folderName}
                 </span>

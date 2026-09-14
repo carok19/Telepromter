@@ -48,9 +48,17 @@ export const LINK = 'text-accent transition-colors hover:text-accent-hover'
 // default global (ver index.css), así que el texto corrido y los
 // metadatos no necesitan clase aparte.
 export const FONT_DISPLAY = 'font-display'
-export const SCREEN_TITLE = `${FONT_DISPLAY} text-xl font-bold tracking-tight text-white`
+// Handoff "Diseño mobile estilo Apple": títulos de pantalla grandes y con
+// tracking bien negativo (32px/700/-1.1px) — antes eran mucho más chicos
+// (text-xl=20px, tracking-tight="solo" -0.025em). Es un token compartido
+// (Biblioteca/Carpeta/Configuración/Ayuda lo importan) a propósito: todas
+// esas pantallas deben verse con el mismo peso de título, no cada una a
+// mano.
+export const SCREEN_TITLE = `${FONT_DISPLAY} text-[32px] font-bold tracking-[-1.1px] text-white`
 
-export const RADIUS_CARD = 'rounded-2xl'
+// 20px (no 16px de rounded-2xl): el handoff pide "radios de 18-22px" para
+// tarjetas de contenido — 20px cae justo en el medio del rango.
+export const RADIUS_CARD = 'rounded-[20px]'
 export const RADIUS_PILL = 'rounded-full'
 export const RADIUS_MENU = 'rounded-2xl'
 
@@ -59,15 +67,24 @@ export const GRID_GAP = 'gap-3'
 
 export const PAGE = `mx-auto flex min-h-screen w-full max-w-2xl flex-col ${BG} px-4 pt-6 pb-28 text-white`
 
-export const SEARCH_INPUT = `w-full ${RADIUS_PILL} border-0 ${SURFACE} ${SURFACE_SHADOW} py-2.5 pl-9 pr-4 text-sm text-white placeholder:${TEXT_MUTED} focus:outline-none focus:ring-2 focus:ring-accent/40`
+// Antes sin borde (`border-0`, solo una sombra apenas visible) — el
+// handoff dibuja el buscador con un borde sutil como cualquier otra
+// tarjeta, sin sombra. El color de placeholder es un poco más oscuro que
+// TEXT_MUTED a propósito: así lo pide el handoff para placeholders en
+// particular, no es el mismo tono que el texto secundario del resto de la
+// app.
+export const SEARCH_INPUT = `h-11 w-full ${RADIUS_PILL} ${SURFACE} ${SURFACE_BORDER} pl-10 pr-4 text-base text-white placeholder:text-[#6b6b70] focus:outline-none focus:ring-2 focus:ring-accent/40`
 
 // Grupo segmentado de ancho completo (orden, etc.): misma superficie que
 // las tarjetas (antes un tono a medida, casi idéntico al fondo — el
 // track quedaba invisible y solo se veía la opción activa flotando)
-// para que se lea como un control agrupado, no como texto suelto.
-export const SEGMENTED_TRACK = `grid w-full grid-cols-3 gap-1 ${RADIUS_PILL} ${SURFACE} ${SURFACE_BORDER} ${SURFACE_SHADOW} p-1`
-export const SEGMENTED_OPTION_ACTIVE = `${FONT_DISPLAY} ${RADIUS_PILL} ${ACCENT_BG} py-1.5 text-[13px] font-semibold ${ON_ACCENT}`
-export const SEGMENTED_OPTION_INACTIVE = `${FONT_DISPLAY} ${RADIUS_PILL} py-1.5 text-[13px] font-medium ${TEXT_MUTED} hover:text-white`
+// para que se lea como un control agrupado, no como texto suelto. Alto
+// fijo (34px) + flex para centrar, en vez de solo padding vertical: así
+// coincide exactamente con la altura que pide el handoff en vez de
+// depender de line-height.
+export const SEGMENTED_TRACK = `grid w-full grid-cols-3 gap-1 ${RADIUS_PILL} ${SURFACE} ${SURFACE_BORDER} p-1`
+export const SEGMENTED_OPTION_ACTIVE = `${FONT_DISPLAY} ${RADIUS_PILL} ${ACCENT_BG} flex h-[34px] items-center justify-center text-sm font-semibold ${ON_ACCENT}`
+export const SEGMENTED_OPTION_INACTIVE = `${FONT_DISPLAY} ${RADIUS_PILL} flex h-[34px] items-center justify-center text-sm font-medium ${TEXT_MUTED} hover:text-white`
 
 // Botón de acción primaria (Guardar, Crear, confirmar un diálogo): el
 // acento cuenta acá como "donde importa" — es la misma superficie
