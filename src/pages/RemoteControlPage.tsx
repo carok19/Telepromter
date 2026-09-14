@@ -88,6 +88,15 @@ const NOTICE_DISPLAY_MS = 4000
 // se apretó Play hace un instante.
 const MIDWAY_PROGRESS_THRESHOLD = 0.02
 
+// B.4: cuánto espera el remoto, mostrando "reconectando", antes de darse
+// por vencido con el teleprompter (recarga, se cortó la red del lado del
+// host) y avisarlo con un mensaje más firme. No corta la suscripción ni dejar
+// de escuchar — si el host vuelve después de este tiempo, se recupera igual
+// en cuanto llegue el próximo sync de Presence; esto solo cambia el texto
+// para no dejar al usuario esperando "reconectando…" para siempre sin saber
+// si tiene sentido seguir ahí.
+const HOST_RECONNECT_GRACE_MS = 60_000
+
 // Hook genérico de "mantener presionado": primer disparo inmediato al
 // presionar, luego repetición tras HOLD_INITIAL_DELAY_MS cada
 // HOLD_REPEAT_INTERVAL_MS. onFire se guarda en un ref (no en el closure del
@@ -486,6 +495,32 @@ export function RemoteControlPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.notice?.at])
 
+  // B.4: hostPresent llega de Presence (ver remoteSession.ts) — arranca
+  // optimista en `true` (mismo criterio del lado del servicio), así que acá
+  // solo hace falta reaccionar cuando de verdad se apaga. Mientras esté
+  // apagado, se mide desde cuándo (con un ref: no hace falta re-renderizar
+  // por eso) y, pasado HOST_RECONNECT_GRACE_MS sin volver, se cambia el
+  // mensaje a uno más firme — la suscripción sigue viva igual, así que si
+  // el host vuelve después de "darse por vencido" igual se recupera solo.
+  const hostPresent = session?.hostPresent ?? true
+  const [hostGaveUp, setHostGaveUp] = useState(false)
+  const hostAbsentSinceRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (state !== 'connected' || hostPresent) {
+      hostAbsentSinceRef.current = null
+      setHostGaveUp(false)
+      return
+    }
+    if (hostAbsentSinceRef.current == null) hostAbsentSinceRef.current = Date.now()
+    const remaining = HOST_RECONNECT_GRACE_MS - (Date.now() - hostAbsentSinceRef.current)
+    if (remaining <= 0) {
+      setHostGaveUp(true)
+      return
+    }
+    const timer = window.setTimeout(() => setHostGaveUp(true), remaining)
+    return () => window.clearTimeout(timer)
+  }, [state, hostPresent])
+
   // F8.6 (PWA): refleja esta sesión en remoteStore para que
   // usePwaUpdate.ts (montado fuera de esta pantalla) sepa que este
   // dispositivo está actuando de remoto y no recargue la app en medio de
@@ -639,7 +674,9 @@ export function RemoteControlPage() {
   const playback = session?.playback ?? null
   const engineStatus = playback?.engineStatus ?? 'ready'
   const isPlaying = engineStatus === 'playing'
-  const controlsDisabled = state !== 'connected' || !online
+  // B.4: con el host ausente (recarga, se cortó su red) mandar un comando
+  // no sirve de nada — nadie del otro lado lo va a leer todavía.
+  const controlsDisabled = state !== 'connected' || !online || !hostPresent
   const shownWpm = displayWpm ?? playback?.wpm ?? DEFAULT_WPM
   // Mientras se arrastra, la barra y el porcentaje reflejan el valor
   // optimista local (a dónde va a caer si se suelta ahora); en cuanto se
@@ -679,12 +716,22 @@ export function RemoteControlPage() {
   // errorDetail) — solo se extrae acá para poder mostrarlo tanto en la
   // cabecera compacta como, si hiciera falta, en el panel de espera de más
   // abajo, sin repetir la lógica dos veces.
-  const isReallyOnline = state === 'connected' && online
+  // B.4: hostPresent se suma acá a propósito — antes esto solo miraba la
+  // conexión DEL REMOTO consigo mismo (`online`), así que si el teleprompter
+  // se recargaba o perdía la red, este remoto seguía mostrando "Conectado"
+  // sin que hubiera nadie del otro lado. Ahora, mientras el host esté
+  // ausente, se ve claro que se está reconectando (o que ya se dio por
+  // vencido) en vez de mentir "Conectado".
+  const isReallyOnline = state === 'connected' && online && hostPresent
   const statusLabel =
     state === 'connected'
-      ? online
-        ? 'Conectado'
-        : 'Conectado (sin conexión)'
+      ? !online
+        ? 'Conectado (sin conexión)'
+        : !hostPresent
+          ? hostGaveUp
+            ? 'Teleprompter no disponible'
+            : 'Reconectando con el teleprompter…'
+          : 'Conectado'
       : state === 'error' && errorDetail
         ? `${MESSAGES[state]} ${errorDetail}`
         : MESSAGES[state]

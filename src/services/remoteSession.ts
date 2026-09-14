@@ -271,6 +271,20 @@ export interface RemoteSession {
   // clientId distinto (por ejemplo alguien que entra al canal sin llamar a
   // join_remote_session) nunca enciende esto.
   remoteConnected: boolean
+  // B.4: true si hay un cliente trackeado en Presence con role:"host" en
+  // este canal AHORA MISMO — a diferencia de remoteUid/remoteConnected, no
+  // hace falta confirmar nada contra la tabla (solo puede haber un host
+  // por sesión, y falsificar esto en Presence como máximo hace que el
+  // remoto muestre "conectado" de más un instante — el mismo límite ya
+  // documentado al principio de este archivo, no un problema nuevo). Lo
+  // usa el REMOTO para saber si el teleprompter se cayó (recarga, se
+  // cortó la red) y mostrar un estado claro en vez de seguir diciendo
+  // "Conectado" con nadie del otro lado. Arranca en `true` (optimista):
+  // el primer instante tras unirse, antes de que llegue el primer sync de
+  // Presence, es mucho más común que el host SÍ esté ahí (recién trackeó
+  // su propia presencia al crear la sesión) que lo contrario — arrancar en
+  // `false` solo generaría un parpadeo de "reconectando" en el camino feliz.
+  hostPresent: boolean
   status: RemoteSessionStatus
   // Cosmético únicamente: nunca se sube el contenido del guion.
   scriptTitle: string
@@ -337,6 +351,8 @@ interface PresencePayload {
 interface RemoteAuthState {
   remoteUid: string | null
   remoteConnected: boolean
+  // B.4: ver el comentario de RemoteSession.hostPresent.
+  hostPresent: boolean
 }
 
 interface ChannelEntry {
@@ -349,8 +365,9 @@ interface ChannelEntry {
   scriptListListeners: Set<(list: RemoteScriptList) => void>
   noticeListeners: Set<(notice: RemoteNotice) => void>
   endedListeners: Set<() => void>
-  // Emite cada vez que cambia remoteUid (confirmado por la tabla) o
-  // remoteConnected (Presence coincidiendo con ese remoteUid).
+  // Emite cada vez que cambia remoteUid (confirmado por la tabla),
+  // remoteConnected (Presence coincidiendo con ese remoteUid) o hostPresent
+  // (Presence con role:"host").
   remoteStateListeners: Set<(state: RemoteAuthState) => void>
   // remoteUid confirmado por la tabla — NUNCA se pisa con un valor que
   // venga solo de Presence. Ver scheduleRemoteUidRefresh().
@@ -385,10 +402,22 @@ function isRemotePresent(channel: RealtimeChannel, confirmedRemoteUid: string | 
   return false
 }
 
+// B.4: solo puede haber un host por sesión (nunca hace falta comparar
+// clientId como isRemotePresent) — basta con que ALGUIEN esté trackeado
+// con role:"host" en el canal ahora mismo.
+function isHostPresent(channel: RealtimeChannel): boolean {
+  const state = channel.presenceState<PresencePayload>()
+  for (const key in state) {
+    if (state[key].some((p) => p.role === 'host')) return true
+  }
+  return false
+}
+
 function emitRemoteState(entry: ChannelEntry): void {
   const state: RemoteAuthState = {
     remoteUid: entry.confirmedRemoteUid,
     remoteConnected: isRemotePresent(entry.channel, entry.confirmedRemoteUid),
+    hostPresent: isHostPresent(entry.channel),
   }
   entry.remoteStateListeners.forEach((fn) => fn(state))
 }
@@ -551,6 +580,85 @@ function withConnectionTimeout<T>(promise: PromiseLike<T>): Promise<T> {
 // ---------------------------------------------------------------------
 const hostTokens = new Map<string, string>()
 
+// ---------------------------------------------------------------------
+// B.4 (reconexión del host): {sessionId, hostToken} sobrevive una recarga
+// completa de la pestaña (a diferencia de `hostTokens`, en memoria, que se
+// pierde) — así, si el teleprompter se recarga o se corta la red, no hace
+// falta que el remoto vuelva a escanear el QR. Solo estas tres cosas viajan
+// acá; el host_token NUNCA sale de este módulo hacia el remoto ni al QR,
+// exactamente igual que cuando vive en `hostTokens`.
+// ---------------------------------------------------------------------
+const HOST_SESSION_STORAGE_KEY = 'robress:hostRemoteSession'
+
+// Debe coincidir con el "now() + interval '2 hours'" fijo de
+// create_remote_session (ver supabase/remote_sessions.sql). No hay forma de
+// leer la expiración real sin otra llamada de red — replicarlo acá permite
+// descartar una sesión guardada obviamente vieja SIN gastarla.
+const SESSION_TTL_MS = 2 * 60 * 60 * 1000
+
+interface StoredHostSession {
+  sessionId: string
+  hostToken: string
+  createdAt: number
+}
+
+function saveHostSession(sessionId: string, hostToken: string): void {
+  try {
+    const stored: StoredHostSession = { sessionId, hostToken, createdAt: Date.now() }
+    window.localStorage.setItem(HOST_SESSION_STORAGE_KEY, JSON.stringify(stored))
+  } catch {
+    // localStorage puede no estar disponible (modo privado, permisos) — sin
+    // persistencia, una recarga simplemente vuelve a pedir "Control remoto"
+    // desde cero, como pasaba siempre antes de B.4.
+  }
+}
+
+function readStoredHostSession(): StoredHostSession | null {
+  try {
+    const raw = window.localStorage.getItem(HOST_SESSION_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<StoredHostSession> | null
+    if (
+      parsed &&
+      typeof parsed.sessionId === 'string' &&
+      typeof parsed.hostToken === 'string' &&
+      typeof parsed.createdAt === 'number'
+    ) {
+      return parsed as StoredHostSession
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
+function clearStoredHostSession(): void {
+  try {
+    window.localStorage.removeItem(HOST_SESSION_STORAGE_KEY)
+  } catch {
+    // Nada que limpiar si ni siquiera se pudo leer/guardar.
+  }
+}
+
+// B.4: le avisa a un remoto que pueda seguir escuchando en el canal de una
+// sesión ya muerta (vencida o terminada) que se acabó — mismo evento
+// 'ended' que ya dispara endSession(), pero sin necesitar host_token: los
+// canales de Realtime son públicos (ver el comentario "LÍMITE CONOCIDO" al
+// principio de este archivo), así que emitir un broadcast no demuestra
+// nada que este remoto no pudiera confirmar igual leyendo la tabla. El
+// canal se suelta enseguida: el host no va a seguir usando esta sesión.
+async function notifyRemoteSessionIsDead(sessionId: string): Promise<void> {
+  const client = getSupabaseClient()
+  if (!client) return
+  try {
+    const entry = ensureChannel(client, sessionId)
+    await waitForSubscribed(entry)
+    await entry.channel.send({ type: 'broadcast', event: 'ended', payload: {} })
+  } finally {
+    releaseChannel(client, sessionId)
+  }
+}
+
 interface SessionRow {
   id: string
   script_title: string
@@ -558,6 +666,10 @@ interface SessionRow {
   expires_at: string
   remote_client_id: string | null
   ended_at: string | null
+}
+
+function isRowExpired(row: SessionRow): boolean {
+  return new Date(row.expires_at).getTime() < Date.now()
 }
 
 function rowToSession(row: SessionRow, remoteUidOverride?: string | null): RemoteSession {
@@ -568,7 +680,17 @@ function rowToSession(row: SessionRow, remoteUidOverride?: string | null): Remot
     // subscribeToSession) — acá arranca en false porque una lectura de la
     // tabla no sabe nada de quién está conectado ahora mismo.
     remoteConnected: false,
-    status: row.ended_at ? 'ended' : remoteUid ? 'paired' : 'waiting',
+    // B.4: arranca optimista (ver el comentario de RemoteSession.hostPresent)
+    // — subscribeToSession lo corrige contra Presence enseguida.
+    hostPresent: true,
+    // B.4: antes esto solo miraba ended_at — una sesión que expiró SOLA
+    // (nadie llamó a end_remote_session) seguía leyéndose "paired"/"waiting"
+    // para siempre. join_remote_session ya distinguía 'expired' aparte para
+    // el intento de unirse; acá se pliega al mismo 'ended' que ya entienden
+    // tanto el remoto (MESSAGES.ended) como resumeHostSession — una sesión
+    // vencida se comporta, para cualquiera que la lea después, igual que
+    // una cerrada a propósito.
+    status: row.ended_at || isRowExpired(row) ? 'ended' : remoteUid ? 'paired' : 'waiting',
     scriptTitle: row.script_title,
     command: null,
     playback: null,
@@ -601,6 +723,7 @@ export async function createSession(scriptTitle: string): Promise<{ sessionId: s
   }
 
   hostTokens.set(row.id, row.host_token)
+  saveHostSession(row.id, row.host_token)
 
   // Anunciar presencia de host de inmediato, para que en cuanto el remoto
   // se una, el sync de Presence ya tenga con quién cruzar datos.
@@ -621,6 +744,11 @@ export async function endSession(sessionId: string): Promise<void> {
     if (error) console.error('[remote] end_remote_session falló:', error)
     hostTokens.delete(sessionId)
   }
+  // B.4: cerrar a propósito no debe dejar nada para "retomar" en el
+  // próximo montaje — solo se limpia si la sesión guardada es justo ESTA
+  // (nunca la de otra pestaña/sesión más nueva que ya la haya reemplazado).
+  const stored = readStoredHostSession()
+  if (stored?.sessionId === sessionId) clearStoredHostSession()
   // Avisar en vivo al remoto conectado ahora mismo, sin esperar a que
   // vuelva a consultar la sesión.
   const entry = channelRegistry.get(sessionId)
@@ -641,6 +769,87 @@ export async function getSession(sessionId: string): Promise<RemoteSession | nul
   const row = Array.isArray(data) ? (data[0] as SessionRow | undefined) : undefined
   if (!row) return null
   return rowToSession(row)
+}
+
+export type ResumeHostSessionOutcome = 'resumed' | 'none' | 'dead'
+
+export interface ResumeHostSessionResult {
+  outcome: ResumeHostSessionOutcome
+  sessionId: string | null
+}
+
+// B.4: se llama UNA vez al montar TeleprompterPage — sin SQL nuevo, retoma
+// (si sigue viva) la sesión de host guardada en localStorage por
+// saveHostSession(), sin que el remoto tenga que hacer nada: mismo
+// sessionId, mismo canal, el host solo vuelve a trackear su propia
+// presencia. Devuelve:
+//   - 'resumed' + el sessionId: seguía viva — el llamador (TeleprompterPage)
+//     solo necesita setHostSessionId(sessionId), el resto de la pantalla
+//     (SettingsSheet, publishPlayback, etc.) ya sabe reaccionar a eso
+//     exactamente como si la sesión se acabara de crear.
+//   - 'dead': había algo guardado pero ya no sirve (expiró, terminó, o ya
+//     no existe) — se limpia el localStorage y, por si un remoto sigue
+//     escuchando en ese canal viejo, se le avisa (ver
+//     notifyRemoteSessionIsDead) para que muestre "Sesión finalizada" en
+//     vez de quedarse pensando que sigue conectado. La próxima vez que se
+//     pida Control remoto, se crea una sesión nueva limpia — no hace falta
+//     ningún paso extra acá para eso, ya es lo que hace
+//     handleRemoteControlClick cuando hostSessionId es null.
+//   - 'none': no había nada guardado, o no se pudo confirmar nada ahora
+//     mismo (sin red, sin cliente, error de servidor) — se deja el
+//     localStorage TAL CUAL (no se sabe si la sesión murió o no) para
+//     reintentar en el próximo montaje.
+export async function resumeHostSession(): Promise<ResumeHostSessionResult> {
+  const stored = readStoredHostSession()
+  if (!stored) return { outcome: 'none', sessionId: null }
+
+  // Chequeo local, sin red: si ya pasaron las 2 horas no tiene sentido
+  // siquiera preguntarle al servidor (pedido explícito: "si pasó, no
+  // intentes retomar").
+  if (Date.now() - stored.createdAt >= SESSION_TTL_MS) {
+    clearStoredHostSession()
+    void notifyRemoteSessionIsDead(stored.sessionId)
+    return { outcome: 'dead', sessionId: null }
+  }
+
+  const client = getSupabaseClient()
+  if (!client || isOffline()) {
+    // No se puede confirmar nada ahora mismo — no es que la sesión haya
+    // muerto, es que ni siquiera se puede preguntar. Se deja tal cual.
+    return { outcome: 'none', sessionId: null }
+  }
+
+  let result: Awaited<ReturnType<typeof client.rpc>>
+  try {
+    result = await withConnectionTimeout(client.rpc('get_remote_session', { p_id: stored.sessionId }))
+  } catch {
+    // Timeout u otro error de transporte: mismo criterio que sin red.
+    return { outcome: 'none', sessionId: null }
+  }
+  const { data, error } = result
+  if (error) {
+    console.error('[remote] resumeHostSession: get_remote_session falló:', error)
+    return { outcome: 'none', sessionId: null }
+  }
+  const row = Array.isArray(data) ? (data[0] as SessionRow | undefined) : undefined
+  const isDead = !row || row.ended_at != null || isRowExpired(row)
+  if (isDead) {
+    clearStoredHostSession()
+    void notifyRemoteSessionIsDead(stored.sessionId)
+    return { outcome: 'dead', sessionId: null }
+  }
+
+  // Sigue viva: recuperar el host_token en memoria (se perdió al recargar
+  // — hostTokens es un Map en memoria, ver su comentario) y volver a
+  // anunciar presencia de host en el mismo canal. Un remoto que siga
+  // conectado recibe el sync de Presence solo, sin hacer nada de su lado.
+  hostTokens.set(stored.sessionId, stored.hostToken)
+  const entry = ensureChannel(client, stored.sessionId)
+  waitForSubscribed(entry).then(() => {
+    entry.channel.track({ role: 'host' } satisfies PresencePayload)
+  })
+
+  return { outcome: 'resumed', sessionId: stored.sessionId }
 }
 
 export function subscribeToSession(
@@ -696,13 +905,15 @@ export function subscribeToSession(
     emit()
   }
   // remoteUid acá SIEMPRE viene confirmado por la tabla (ver
-  // scheduleRemoteUidRefresh) — Presence solo aporta remoteConnected.
-  const onRemoteState = ({ remoteUid, remoteConnected }: RemoteAuthState) => {
+  // scheduleRemoteUidRefresh) — Presence solo aporta remoteConnected y
+  // hostPresent.
+  const onRemoteState = ({ remoteUid, remoteConnected, hostPresent }: RemoteAuthState) => {
     if (!current) return
     current = {
       ...current,
       remoteUid,
       remoteConnected,
+      hostPresent,
       status: current.status === 'ended' ? 'ended' : remoteUid ? 'paired' : 'waiting',
     }
     emit()
@@ -724,7 +935,10 @@ export function subscribeToSession(
     if (closed) return
     current = initial
     entry.confirmedRemoteUid = initial?.remoteUid ?? null
-    if (current) current.remoteConnected = isRemotePresent(entry.channel, entry.confirmedRemoteUid)
+    if (current) {
+      current.remoteConnected = isRemotePresent(entry.channel, entry.confirmedRemoteUid)
+      current.hostPresent = isHostPresent(entry.channel)
+    }
     emit()
   })
 

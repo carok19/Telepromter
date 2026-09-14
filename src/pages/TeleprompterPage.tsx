@@ -132,6 +132,7 @@ export function TeleprompterPage() {
 
   const remoteConfigured = useRemoteStore((s) => s.configured)
   const createRemoteSession = useRemoteStore((s) => s.createSession)
+  const resumeHostSession = useRemoteStore((s) => s.resumeHostSession)
   const subscribeRemoteSession = useRemoteStore((s) => s.subscribeSession)
   const setActiveRemoteSession = useRemoteStore((s) => s.setActiveSession)
   const hostSessionId = useRemoteStore((s) => s.hostSessionId)
@@ -142,8 +143,36 @@ export function TeleprompterPage() {
   const [remoteError, setRemoteError] = useState<string | null>(null)
   const publishScriptList = useRemoteStore((s) => s.publishScriptList)
 
+  // B.4 (reconexión del host): si la pestaña se recargó (o se cortó la
+  // red) con un remoto ya emparejado, hostSessionId nace en null en este
+  // montaje — el store es un singleton en memoria, no sobrevive una
+  // recarga real, a diferencia de un simple cambio de guion (ver el
+  // comentario de arriba). Antes de que el usuario tenga que tocar
+  // "Control remoto" de nuevo, se intenta retomar la sesión guardada en
+  // localStorage: si seguía viva, setHostSessionId alcanza — el efecto de
+  // abajo se engancha solo, exactamente como si la sesión se acabara de
+  // crear, y el remoto (si seguía conectado al canal) recupera el control
+  // sin hacer nada de su lado. Si ya no servía (expiró/terminó/no existe),
+  // resumeHostSession ya se encargó de limpiar el localStorage y avisarle
+  // al remoto — acá no hace falta nada más: hostSessionId se queda en
+  // null, igual que si nunca hubiera habido una sesión guardada, y la
+  // próxima vez que se pida Control remoto se crea una limpia.
+  // Corre una sola vez por montaje real de esta página (no por cada
+  // cambio de guion: si hostSessionId ya está seteado, no hay nada que
+  // retomar).
+  useEffect(() => {
+    if (hostSessionId) return
+    resumeHostSession().then((result) => {
+      if (result.outcome === 'resumed' && result.sessionId) {
+        setHostSessionId(result.sessionId)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Suscripción en vivo a la sesión (F8.2). Si hostSessionId ya venía
-  // seteado desde ANTES de este montaje (se sobrevivió un cambio de guion),
+  // seteado desde ANTES de este montaje (se sobrevivió un cambio de guion,
+  // o se acaba de retomar tras una recarga — ver el efecto de arriba),
   // esto reconecta a la MISMA sesión de inmediato — no crea una nueva.
   useEffect(() => {
     if (!hostSessionId) return

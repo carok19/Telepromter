@@ -20,6 +20,7 @@ import {
   publishPlayback as publishPlaybackRemote,
   publishScriptList as publishScriptListRemote,
   requestRemoteUidRefresh,
+  resumeHostSession as resumeHostSessionRemote,
   sendCalibrationCommand as sendCalibrationCommandRemote,
   sendCommand as sendCommandRemote,
   subscribeToConnectivity,
@@ -31,6 +32,7 @@ import {
   type RemotePlayback,
   type RemoteScriptList,
   type RemoteSession,
+  type ResumeHostSessionResult,
 } from '../services/remoteSession'
 import { isRemoteControlConfigured } from '../services/supabase'
 
@@ -42,6 +44,10 @@ interface RemoteState {
   ensureAuth: () => Promise<string | null>
   createSession: (scriptTitle: string) => Promise<{ sessionId: string | null; error: string | null }>
   endSession: (sessionId: string) => Promise<void>
+  // B.4: intenta retomar la sesión de host guardada en localStorage (si
+  // hay alguna) sin crear una nueva — ver el comentario de
+  // resumeHostSession en remoteSession.ts.
+  resumeHostSession: () => Promise<ResumeHostSessionResult>
   subscribeSession: (sessionId: string, callback: (session: RemoteSession | null) => void) => () => void
   joinSession: (sessionId: string) => Promise<JoinSessionResult>
   sendCommand: (sessionId: string, type: RemoteCommandType, value?: number) => Promise<void>
@@ -104,6 +110,8 @@ export const useRemoteStore = create<RemoteState>((set) => ({
   createSession: (scriptTitle) => createSessionRemote(scriptTitle),
 
   endSession: (sessionId) => endSessionRemote(sessionId),
+
+  resumeHostSession: () => resumeHostSessionRemote(),
 
   subscribeSession: (sessionId, callback) => subscribeToSession(sessionId, callback),
 
