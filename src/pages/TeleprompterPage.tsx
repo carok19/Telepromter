@@ -133,6 +133,7 @@ export function TeleprompterPage() {
   const remoteConfigured = useRemoteStore((s) => s.configured)
   const createRemoteSession = useRemoteStore((s) => s.createSession)
   const resumeHostSession = useRemoteStore((s) => s.resumeHostSession)
+  const announceHostSession = useRemoteStore((s) => s.announceHostSession)
   const subscribeRemoteSession = useRemoteStore((s) => s.subscribeSession)
   const setActiveRemoteSession = useRemoteStore((s) => s.setActiveSession)
   const hostSessionId = useRemoteStore((s) => s.hostSessionId)
@@ -172,12 +173,20 @@ export function TeleprompterPage() {
 
   // Suscripción en vivo a la sesión (F8.2). Si hostSessionId ya venía
   // seteado desde ANTES de este montaje (se sobrevivió un cambio de guion,
-  // o se acaba de retomar tras una recarga — ver el efecto de arriba),
-  // esto reconecta a la MISMA sesión de inmediato — no crea una nueva.
+  // una ida y vuelta a Ayuda, o se acaba de retomar tras una recarga — ver
+  // el efecto de arriba), esto reconecta a la MISMA sesión de inmediato —
+  // no crea una nueva.
+  // B.4: announceHostSession en cada (re)conexión — TeleprompterPage se
+  // desmonta y remonta por completo al pasar por /guiones o /ayuda, así
+  // que el canal se recrea, pero nada vuelve a avisar "acá sigue el host"
+  // salvo esto: sin este aviso, el remoto vería hostPresent en false para
+  // siempre después de cualquiera de esos dos caminos, aunque la sesión
+  // esté perfectamente viva.
   useEffect(() => {
     if (!hostSessionId) return
+    announceHostSession(hostSessionId)
     return subscribeRemoteSession(hostSessionId, setRemoteSession)
-  }, [hostSessionId, subscribeRemoteSession])
+  }, [hostSessionId, subscribeRemoteSession, announceHostSession])
 
   // B.3: guiones y carpetas para la lista que ve el remoto. Con liveQuery
   // (en vez de leer una vez, o reutilizar useScriptsStore) esto se

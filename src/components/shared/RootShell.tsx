@@ -15,17 +15,24 @@ import { UpdateBanner } from './UpdateBanner'
 // que TeleprompterPage no está para decirlo? Acá, que envuelve TODAS las
 // rutas y por lo tanto sigue viva mientras dure la pestaña: si hay una
 // hostSessionId activa y el usuario navega a una pantalla que NO es
-// /teleprompter ni /guiones, se la trata como abandonada y se cierra. Esas
-// dos rutas quedan exceptuadas porque son, juntas, el camino normal para
-// "cambiar de guion" (Volver → Mis guiones → abrir otro) — cerrar la
-// sesión justo ahí sería el mismo bug que esta fase vino a arreglar.
+// /teleprompter, /guiones ni /ayuda, se la trata como abandonada y se
+// cierra. /ayuda se suma a la excepción por el botón "?" del modal de
+// emparejamiento (ver PairingModal.tsx): consultar la Ayuda en pleno
+// emparejamiento no debe cortar la sesión ni obligar a escanear el QR de
+// nuevo al volver.
 function useEndAbandonedHostSession() {
   const location = useLocation()
   const endSession = useRemoteStore((s) => s.endSession)
   const setHostSessionId = useRemoteStore((s) => s.setHostSessionId)
 
   useEffect(() => {
-    if (location.pathname.startsWith('/teleprompter') || location.pathname.startsWith('/guiones')) return
+    if (
+      location.pathname.startsWith('/teleprompter') ||
+      location.pathname.startsWith('/guiones') ||
+      location.pathname.startsWith('/ayuda')
+    ) {
+      return
+    }
     const hostSessionId = useRemoteStore.getState().hostSessionId
     if (!hostSessionId) return
     setHostSessionId(null)

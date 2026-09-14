@@ -5,6 +5,7 @@
 // suscripto por separado).
 import { useState } from 'react'
 import QRCode from 'react-qr-code'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type { RemoteSession } from '../../services/remoteSession'
 import { ModalPortal } from '../shared/ModalPortal'
 import { ACCENT_SURFACE, FONT_DISPLAY, SURFACE_RAISED } from '../../styles/tokens'
@@ -18,6 +19,8 @@ interface PairingModalProps {
 
 export function PairingModal({ sessionId, session, joinUrl, onClose }: PairingModalProps) {
   const [copied, setCopied] = useState(false)
+  const navigate = useNavigate()
+  const location = useLocation()
 
   async function handleCopy() {
     try {
@@ -48,7 +51,23 @@ export function PairingModal({ sessionId, session, joinUrl, onClose }: PairingMo
   return (
     <ModalPortal backdropClassName="bg-black/70">
       <div className={`w-full max-w-sm rounded-lg border border-white/10 ${SURFACE_RAISED} p-6 text-center`}>
-        <h2 className={`text-lg font-semibold text-gray-100 ${FONT_DISPLAY}`}>Control remoto</h2>
+        <div className="flex items-center justify-center gap-2">
+          <h2 className={`text-lg font-semibold text-gray-100 ${FONT_DISPLAY}`}>Control remoto</h2>
+          {/* B.4: /ayuda está exceptuada del cierre automático de sesión
+              (ver RootShell.tsx) — consultar esto no corta el
+              emparejamiento. `from` en el estado de navegación es lo que
+              hace que "‹ Volver" en Ayuda te traiga de nuevo acá, en vez
+              de mandarte a la Biblioteca. */}
+          <button
+            type="button"
+            onClick={() => navigate('/ayuda#remoto', { state: { from: location.pathname } })}
+            aria-label="Ayuda sobre el control remoto"
+            title="Ayuda sobre el control remoto"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/10 text-xs font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-100"
+          >
+            ?
+          </button>
+        </div>
         <p className="mt-2 text-sm text-gray-400">
           Escaneá este código QR desde otro celular para controlar este Teleprompter.
         </p>

@@ -11,6 +11,7 @@
 import { create } from 'zustand'
 import type { MirrorMode, TextAlign } from '../engine/calibrationEngine'
 import {
+  announceHostPresence,
   createSession as createSessionRemote,
   endSession as endSessionRemote,
   getRemoteClientId,
@@ -48,6 +49,11 @@ interface RemoteState {
   // hay alguna) sin crear una nueva — ver el comentario de
   // resumeHostSession en remoteSession.ts.
   resumeHostSession: () => Promise<ResumeHostSessionResult>
+  // B.4: vuelve a anunciar presencia de host en el canal — necesario cada
+  // vez que TeleprompterPage se remonta con un hostSessionId que ya
+  // existía (cambio de guion, ida y vuelta a Ayuda), ver el comentario de
+  // announceHostPresence en remoteSession.ts.
+  announceHostSession: (sessionId: string) => void
   subscribeSession: (sessionId: string, callback: (session: RemoteSession | null) => void) => () => void
   joinSession: (sessionId: string) => Promise<JoinSessionResult>
   sendCommand: (sessionId: string, type: RemoteCommandType, value?: number) => Promise<void>
@@ -112,6 +118,8 @@ export const useRemoteStore = create<RemoteState>((set) => ({
   endSession: (sessionId) => endSessionRemote(sessionId),
 
   resumeHostSession: () => resumeHostSessionRemote(),
+
+  announceHostSession: (sessionId) => announceHostPresence(sessionId),
 
   subscribeSession: (sessionId, callback) => subscribeToSession(sessionId, callback),
 

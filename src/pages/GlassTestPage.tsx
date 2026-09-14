@@ -113,6 +113,15 @@ export function GlassTestPage() {
           >
             {panelOpen ? 'Ocultar controles' : 'Mostrar controles'}
           </button>
+          <button
+            type="button"
+            onClick={() => navigate('/ayuda#calibrar', { state: { from: '/glass-test' } })}
+            aria-label="Ayuda para calibrar"
+            title="Ayuda para calibrar"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-white/10 text-xs font-semibold text-gray-400 hover:bg-white/5 hover:text-gray-100"
+          >
+            ?
+          </button>
         </div>
         {!wakeLockSupported && (
           <p className="border-b border-white/10 px-4 py-2 text-xs text-gray-500">

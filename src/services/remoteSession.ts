@@ -700,6 +700,35 @@ function rowToSession(row: SessionRow, remoteUidOverride?: string | null): Remot
   }
 }
 
+// Anuncia presencia de host en el canal de una sesión — lo llaman
+// createSession (al crearla), resumeHostSession (al retomarla tras una
+// recarga) y announceHostPresence (cada vez que TeleprompterPage se
+// vuelve a montar con un hostSessionId ya existente: ver su comentario).
+// Llamarlo de más no hace daño — track() reemplaza el estado anterior de
+// ESTE cliente en el canal, nunca duplica nada.
+function trackHostPresence(client: NonNullable<ReturnType<typeof getSupabaseClient>>, sessionId: string): void {
+  const entry = ensureChannel(client, sessionId)
+  waitForSubscribed(entry).then(() => {
+    entry.channel.track({ role: 'host' } satisfies PresencePayload)
+  })
+}
+
+// B.4: TeleprompterPage se desmonta y remonta por completo al pasar por
+// /guiones o /ayuda (rutas hermanas — ver router.tsx), aunque hostSessionId
+// sobreviva en el store. subscribeToSession() por sí sola NO vuelve a
+// anunciar presencia de host (es la misma función que usa el REMOTO para
+// su propia suscripción, así que no puede asumir ningún rol) — sin este
+// aviso explícito, el canal se reconecta pero el remoto lo vería como
+// "host ausente" (hostPresent en false) para siempre después de un
+// cambio de guion o de visitar Ayuda, aunque la sesión siga perfectamente
+// viva. Se llama desde el efecto de suscripción de TeleprompterPage cada
+// vez que hostSessionId pasa a tener un valor.
+export function announceHostPresence(sessionId: string): void {
+  const client = getSupabaseClient()
+  if (!client) return
+  trackHostPresence(client, sessionId)
+}
+
 export async function createSession(scriptTitle: string): Promise<{ sessionId: string | null; error: string | null }> {
   const client = getSupabaseClient()
   if (!client) return { sessionId: null, error: 'El control remoto no está disponible en este momento.' }
@@ -727,10 +756,7 @@ export async function createSession(scriptTitle: string): Promise<{ sessionId: s
 
   // Anunciar presencia de host de inmediato, para que en cuanto el remoto
   // se una, el sync de Presence ya tenga con quién cruzar datos.
-  const entry = ensureChannel(client, row.id)
-  waitForSubscribed(entry).then(() => {
-    entry.channel.track({ role: 'host' } satisfies PresencePayload)
-  })
+  trackHostPresence(client, row.id)
 
   return { sessionId: row.id, error: null }
 }
@@ -844,10 +870,7 @@ export async function resumeHostSession(): Promise<ResumeHostSessionResult> {
   // anunciar presencia de host en el mismo canal. Un remoto que siga
   // conectado recibe el sync de Presence solo, sin hacer nada de su lado.
   hostTokens.set(stored.sessionId, stored.hostToken)
-  const entry = ensureChannel(client, stored.sessionId)
-  waitForSubscribed(entry).then(() => {
-    entry.channel.track({ role: 'host' } satisfies PresencePayload)
-  })
+  trackHostPresence(client, stored.sessionId)
 
   return { outcome: 'resumed', sessionId: stored.sessionId }
 }

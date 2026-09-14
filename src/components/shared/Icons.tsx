@@ -226,3 +226,59 @@ export function FilePlusIcon({ className = DEFAULT_SIZE }: IconProps) {
     </svg>
   )
 }
+
+// Los siguientes cinco se agregan para la pantalla de Ayuda (una por
+// sección) — mismo trazo/tamaño que el resto del set, nada nuevo que
+// aprender visualmente.
+
+export function SmartphoneIcon({ className = DEFAULT_SIZE }: IconProps) {
+  return (
+    <svg {...strokeProps} className={className} aria-hidden="true">
+      <rect width="14" height="20" x="5" y="2" rx="2" />
+      <line x1="12" x2="12.01" y1="18" y2="18" />
+    </svg>
+  )
+}
+
+export function SlidersIcon({ className = DEFAULT_SIZE }: IconProps) {
+  return (
+    <svg {...strokeProps} className={className} aria-hidden="true">
+      <line x1="4" x2="20" y1="7" y2="7" />
+      <circle cx="9" cy="7" r="2" fill="currentColor" stroke="none" />
+      <line x1="4" x2="20" y1="17" y2="17" />
+      <circle cx="15" cy="17" r="2" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+export function GamepadIcon({ className = DEFAULT_SIZE }: IconProps) {
+  return (
+    <svg {...strokeProps} className={className} aria-hidden="true">
+      <line x1="6" x2="10" y1="12" y2="12" />
+      <line x1="8" x2="8" y1="10" y2="14" />
+      <circle cx="15" cy="13" r="1" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="11" r="1" fill="currentColor" stroke="none" />
+      <path d="M17.32 5H6.68a4 4 0 0 0-3.978 3.59c-.006.052-.01.101-.017.152C2.604 9.416 2 14.456 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.414-1.414A2 2 0 0 1 9.828 16h4.344a2 2 0 0 1 1.414.586L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.544-.604-6.584-.685-7.258-.007-.05-.011-.1-.017-.152A4 4 0 0 0 17.32 5Z" />
+    </svg>
+  )
+}
+
+export function DownloadIcon({ className = DEFAULT_SIZE }: IconProps) {
+  return (
+    <svg {...strokeProps} className={className} aria-hidden="true">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7 10 12 15 17 10" />
+      <line x1="12" x2="12" y1="15" y2="3" />
+    </svg>
+  )
+}
+
+export function AlertCircleIcon({ className = DEFAULT_SIZE }: IconProps) {
+  return (
+    <svg {...strokeProps} className={className} aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" x2="12" y1="8" y2="12" />
+      <line x1="12" x2="12.01" y1="16" y2="16" />
+    </svg>
+  )
+}
