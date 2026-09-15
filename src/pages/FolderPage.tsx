@@ -19,10 +19,10 @@ import { FabMenu } from '../components/shared/FabMenu'
 import { PromptDialog } from '../components/shared/PromptDialog'
 import { MoreHorizontalIcon, SearchIcon } from '../components/shared/Icons'
 import type { DraftRecord, ScriptRecord } from '../db/db'
+import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../engine/duration'
 import { useDropdownMenu } from '../hooks/useDropdownMenu'
 import { useScriptsStore } from '../stores/scriptsStore'
 import {
-  GRID_GAP,
   LINK,
   PAGE,
   RADIUS_MENU,
@@ -157,10 +157,17 @@ export function FolderPage() {
 
   const title = isSinCarpeta ? 'Sin carpeta' : (folder?.name ?? '')
 
+  // Total de duración estimada de la carpeta para el subtítulo ("N guiones
+  // · M:SS en total") — sobre TODOS los guiones de la carpeta (incluidos
+  // los nunca guardados), no solo los que un término de búsqueda deja ver.
+  const totalDuration = formatDuration(
+    displayScripts.reduce((sum, { script }) => sum + estimateDurationSeconds(countWords(script.content), DEFAULT_WPM), 0),
+  )
+
   return (
     <div className={PAGE}>
       <header className="mb-5 flex items-center justify-between">
-        <button type="button" onClick={() => navigate('/guiones')} className={`text-sm font-medium ${LINK}`}>
+        <button type="button" onClick={() => navigate('/guiones')} className={`text-[17px] tracking-[-0.3px] ${LINK}`}>
           ‹ Biblioteca
         </button>
         {!isSinCarpeta && folder && (
@@ -214,9 +221,12 @@ export function FolderPage() {
         )}
       </header>
 
-      <h1 className={SCREEN_TITLE}>{title}</h1>
+      <h1 className={`${SCREEN_TITLE} mb-0.5`}>{title}</h1>
+      <p className={`mb-[18px] text-[15px] ${TEXT_MUTED}`}>
+        {displayScripts.length} {displayScripts.length === 1 ? 'guion' : 'guiones'} · {totalDuration} en total
+      </p>
 
-      <div className="relative mt-4 mb-5">
+      <div className="relative mb-5">
         <SearchIcon className={`pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 ${TEXT_FAINT}`} />
         <input
           type="text"
@@ -242,7 +252,7 @@ export function FolderPage() {
         />
       )}
 
-      <div className={`flex flex-col ${GRID_GAP}`}>
+      <div className="flex flex-col gap-2.5">
         {visibleScripts.map(({ script, isDraft }) => (
           <ScriptCard
             key={script.id}

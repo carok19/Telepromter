@@ -2,10 +2,13 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { FolderRecord, ScriptRecord } from '../../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../../engine/duration'
+import { formatRelativeDateShort } from '../../engine/relativeDate'
 import { extractTextPreview } from '../../engine/textPreview'
 import { useDropdownMenu } from '../../hooks/useDropdownMenu'
-import { FileTextIcon, MoreVerticalIcon } from '../shared/Icons'
+import { MoreVerticalIcon } from '../shared/Icons'
 import {
+  ACCENT_SOFT_BG,
+  ACCENT_TEXT,
   SURFACE_BORDER,
   FONT_DISPLAY,
   RADIUS_CARD,
@@ -13,7 +16,6 @@ import {
   SURFACE,
   SURFACE_HOVER,
   SURFACE_RAISED,
-  SURFACE_SHADOW,
   TEXT_FAINT,
   TEXT_MUTED,
 } from '../../styles/tokens'
@@ -68,10 +70,7 @@ export function ScriptCard({
   const wordCount = countWords(script.content)
   const duration = formatDuration(estimateDurationSeconds(wordCount, DEFAULT_WPM))
   const preview = extractTextPreview(script.content) || 'Guion vacío'
-  const updated = new Date(script.updatedAt).toLocaleString('es', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  })
+  const updated = formatRelativeDateShort(script.updatedAt)
 
   return (
     // Rediseño (Parte 2): tocar la tarjeta abre el TELEPROMPTER directo
@@ -80,22 +79,21 @@ export function ScriptCard({
     // 360px competía por espacio con el título.
     <div
       onClick={onOpenTeleprompter}
-      className={`group relative cursor-pointer ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} ${SURFACE_SHADOW} p-3.5 transition-colors ${SURFACE_HOVER}`}
+      className={`group relative cursor-pointer ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} p-3.5 transition-colors ${SURFACE_HOVER}`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-3">
         {/* min-w-0 es lo que permite que title/preview trunquen en vez de
             empujar el ancho de la tarjeta — sin esto, a 360px con un
             título largo, la tarjeta entera se desbordaría. */}
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <FileTextIcon className={`mt-0.5 h-4 w-4 shrink-0 ${TEXT_MUTED}`} />
-          <div className="min-w-0 flex-1">
-            <h2 className={`truncate text-[15px] font-semibold text-white ${FONT_DISPLAY}`}>{script.title || 'Sin título'}</h2>
-            <p className={`mt-1 text-xs ${TEXT_FAINT}`}>
-              {isDraft && <span className="mr-1 font-semibold text-amber-400">[BORRADOR]</span>}
-              {wordCount} palabras · ~{duration} min · {updated}
-            </p>
-            <p className={`mt-1.5 line-clamp-2 text-sm ${TEXT_MUTED}`}>{preview}</p>
-          </div>
+        <div className="min-w-0 flex-1">
+          <h2 className={`truncate text-[17px] font-semibold tracking-[-0.4px] text-white ${FONT_DISPLAY}`}>
+            {script.title || 'Sin título'}
+          </h2>
+          <p className={`mt-1 text-[13px] ${TEXT_MUTED}`}>
+            {isDraft && <span className="mr-1 font-semibold text-amber-400">[BORRADOR]</span>}
+            {updated} · {duration} · {wordCount} palabras
+          </p>
+          <p className={`mt-2 line-clamp-2 text-sm leading-[1.35] ${TEXT_FAINT}`}>{preview}</p>
         </div>
         <div ref={anchorRef} className="relative shrink-0">
           <button
@@ -104,7 +102,7 @@ export function ScriptCard({
               e.stopPropagation()
               setMenuOpen((v) => !v)
             }}
-            className={`rounded-full p-1.5 ${TEXT_FAINT} hover:bg-white/10 hover:text-white`}
+            className={`flex h-10 w-10 items-center justify-center rounded-full ${ACCENT_SOFT_BG} ${ACCENT_TEXT} transition-colors hover:bg-accent/25`}
             aria-label="Más acciones"
           >
             <MoreVerticalIcon className="h-4 w-4" />
