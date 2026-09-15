@@ -22,18 +22,18 @@ export function FolderCard({ name, scriptCount, draftCount, updatedLabel, onOpen
     <button
       type="button"
       onClick={onOpen}
-      className={`flex flex-col items-start gap-3 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} px-3.5 py-4 text-left transition-colors ${SURFACE_HOVER}`}
+      className={`flex flex-col items-start gap-3 ${RADIUS_CARD} ${SURFACE} ${SURFACE_BORDER} px-3.5 py-[15px] text-left transition-colors ${SURFACE_HOVER}`}
     >
       <FolderIcon className="h-6 w-6 text-accent" />
       <div className="w-full min-w-0">
         <p className={`line-clamp-2 text-[17px] leading-snug font-semibold tracking-[-0.4px] text-white ${FONT_DISPLAY}`}>
           {name}
         </p>
-        <p className={`mt-1 truncate text-[13px] ${TEXT_MUTED}`}>
+        <p className={`mt-0.5 truncate text-[13px] ${TEXT_MUTED}`}>
           {scriptsLabel}
           {draftsLabel}
         </p>
-        {updatedLabel && <p className={`mt-0.5 truncate text-[13px] ${TEXT_FAINT}`}>{updatedLabel}</p>}
+        {updatedLabel && <p className={`truncate text-[13px] ${TEXT_FAINT}`}>{updatedLabel}</p>}
       </div>
     </button>
   )

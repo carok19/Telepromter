@@ -73,7 +73,10 @@ export const PAGE = `mx-auto flex min-h-screen w-full max-w-2xl flex-col ${BG} p
 // TEXT_MUTED a propósito: así lo pide el handoff para placeholders en
 // particular, no es el mismo tono que el texto secundario del resto de la
 // app.
-export const SEARCH_INPUT = `h-11 w-full ${RADIUS_PILL} ${SURFACE} ${SURFACE_BORDER} pl-10 pr-4 text-base text-white placeholder:text-[#6b6b70] focus:outline-none focus:ring-2 focus:ring-accent/40`
+// 22px, no full pill: el handoff dibuja el buscador con esquinas bien
+// redondeadas pero NO una cápsula perfecta (a esta altura de 44px una
+// cápsula real se nota más "ovalada" de lo que pide el diseño).
+export const SEARCH_INPUT = `h-11 w-full rounded-[22px] ${SURFACE} ${SURFACE_BORDER} pl-10 pr-4 text-base text-white placeholder:text-[#6b6b70] focus:outline-none focus:ring-2 focus:ring-accent/40`
 
 // Grupo segmentado de ancho completo (orden, etc.): misma superficie que
 // las tarjetas (antes un tono a medida, casi idéntico al fondo — el
@@ -81,10 +84,11 @@ export const SEARCH_INPUT = `h-11 w-full ${RADIUS_PILL} ${SURFACE} ${SURFACE_BOR
 // para que se lea como un control agrupado, no como texto suelto. Alto
 // fijo (34px) + flex para centrar, en vez de solo padding vertical: así
 // coincide exactamente con la altura que pide el handoff en vez de
-// depender de line-height.
-export const SEGMENTED_TRACK = `grid w-full grid-cols-3 gap-1 ${RADIUS_PILL} ${SURFACE} ${SURFACE_BORDER} p-1`
-export const SEGMENTED_OPTION_ACTIVE = `${FONT_DISPLAY} ${RADIUS_PILL} ${ACCENT_BG} flex h-[34px] items-center justify-center text-sm font-semibold ${ON_ACCENT}`
-export const SEGMENTED_OPTION_INACTIVE = `${FONT_DISPLAY} ${RADIUS_PILL} flex h-[34px] items-center justify-center text-sm font-medium ${TEXT_MUTED} hover:text-white`
+// depender de line-height. Radios (22px track / 18px opción) también
+// del handoff, no full pill como el resto de los controles redondos.
+export const SEGMENTED_TRACK = `grid w-full grid-cols-3 gap-1 rounded-[22px] ${SURFACE} ${SURFACE_BORDER} p-1`
+export const SEGMENTED_OPTION_ACTIVE = `${FONT_DISPLAY} rounded-[18px] ${ACCENT_BG} flex h-[34px] items-center justify-center text-sm font-semibold ${ON_ACCENT}`
+export const SEGMENTED_OPTION_INACTIVE = `${FONT_DISPLAY} rounded-[18px] flex h-[34px] items-center justify-center text-sm font-medium ${TEXT_MUTED} hover:text-white`
 
 // Botón de acción primaria (Guardar, Crear, confirmar un diálogo): el
 // acento cuenta acá como "donde importa" — es la misma superficie

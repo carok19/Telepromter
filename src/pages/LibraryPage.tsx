@@ -104,6 +104,11 @@ export function LibraryPage() {
     return [sinCarpeta, ...real]
   }, [folders, scripts, pendingDrafts])
 
+  // Totales para el subtítulo ("N guiones · M carpetas"): siempre sobre
+  // el universo completo, no sobre lo filtrado por búsqueda/orden.
+  const totalScripts = scripts.length
+  const totalFolders = folderSummaries.length
+
   const term = search.trim().toLowerCase()
 
   const visibleFolders = useMemo(() => {
@@ -138,8 +143,7 @@ export function LibraryPage() {
   return (
     <div className={PAGE}>
       <header className="mb-5 flex items-center justify-between">
-        <span className="h-9 w-9" aria-hidden="true" />
-        <img src={logo} alt="Robress Teleprompter" width={36} height={36} className="rounded-lg" />
+        <img src={logo} alt="Robress Teleprompter" width={38} height={38} className="rounded-lg" />
         <button
           type="button"
           onClick={() => navigate('/configuracion')}
@@ -150,9 +154,12 @@ export function LibraryPage() {
         </button>
       </header>
 
-      <h1 className={SCREEN_TITLE}>Guiones &amp; Carpetas</h1>
+      <h1 className={`${SCREEN_TITLE} mb-0.5`}>Guiones &amp; Carpetas</h1>
+      <p className={`mb-[18px] text-[15px] tracking-[-0.2px] ${TEXT_MUTED}`}>
+        {totalScripts} {totalScripts === 1 ? 'guion' : 'guiones'} · {totalFolders} {totalFolders === 1 ? 'carpeta' : 'carpetas'}
+      </p>
 
-      <div className="relative mt-4">
+      <div className="relative">
         <SearchIcon className={`pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 ${TEXT_FAINT}`} />
         <input
           type="text"
