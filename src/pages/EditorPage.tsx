@@ -7,7 +7,7 @@ import { FolderPickerDialog } from '../components/shared/FolderPickerDialog'
 import { db, type ScriptRecord } from '../db/db'
 import { DEFAULT_WPM, countWords, estimateDurationSeconds, formatDuration } from '../engine/duration'
 import { useScriptsStore } from '../stores/scriptsStore'
-import { BTN_PRIMARY, FONT_DISPLAY } from '../styles/tokens'
+import { ACCENT_SOFT_BG, ACCENT_TEXT, BTN_PRIMARY, FONT_DISPLAY, LINK, TEXT_FAINT } from '../styles/tokens'
 
 const AUTOSAVE_DELAY_MS = 500
 
@@ -238,37 +238,38 @@ export function EditorPage() {
   }
 
   const durationLabel = formatDuration(estimateDurationSeconds(wordCount, wpm))
+  const folderName = script.folderId != null ? (folders.find((f) => f.id === script.folderId)?.name ?? 'Sin carpeta') : 'Sin carpeta'
 
   return (
     <div className="flex h-full flex-col">
-      {/* Ancho angosto (360px): "← Volver" y "Guardar" van SIEMPRE en su
+      {/* Ancho angosto (360px): "‹ Atrás" y "Guardar" van SIEMPRE en su
           propia fila con shrink-0 (nunca se achican ni se cortan) y el
-          indicador de cambios sin guardar, en el medio, es lo único que
-          cede espacio (min-w-0 + truncate) — así nunca empuja a Guardar
-          fuera de la pantalla. El título va en una segunda fila completa,
-          con su propio min-w-0 (un <input> flex, a diferencia de un <span>,
-          no se achica solo — sin esto imponía un ancho mínimo propio que
-          por sí solo ya desbordaba el header). */}
-      <header className="flex flex-col gap-2 border-b border-white/10 px-4 py-3 sm:px-6">
+          indicador de estado, en el medio, es lo único que cede espacio
+          (min-w-0 + truncate) — así nunca empuja a Guardar fuera de la
+          pantalla. El título va en una segunda fila completa, con su
+          propio min-w-0 (un <input> flex, a diferencia de un <span>, no se
+          achica solo — sin esto imponía un ancho mínimo propio que por sí
+          solo ya desbordaba el header). */}
+      <header className="flex flex-col gap-3 border-b border-white/[0.07] px-4 py-3 sm:px-6">
         <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={() => navigate('/guiones')}
-            className="shrink-0 text-sm text-gray-400 hover:text-gray-100"
-          >
-            ← Volver
+          <button type="button" onClick={() => navigate('/guiones')} className={`shrink-0 text-[17px] ${LINK}`}>
+            ‹ Atrás
           </button>
-          {isDirty && (
-            <span className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-xs text-amber-400">
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
-              <span className="truncate">Cambios sin guardar</span>
-            </span>
-          )}
+          <span className={`min-w-0 flex-1 truncate text-center text-[13px] ${TEXT_FAINT}`}>
+            {isDirty ? (
+              <span className="inline-flex items-center gap-1.5 text-amber-400">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                Cambios sin guardar
+              </span>
+            ) : (
+              'Guardado'
+            )}
+          </span>
           <button
             type="button"
             onClick={handleSave}
             disabled={!canSave}
-            className={`shrink-0 ${BTN_PRIMARY} disabled:cursor-not-allowed disabled:opacity-40`}
+            className={`shrink-0 ${BTN_PRIMARY} rounded-[16px] px-4 py-2 disabled:cursor-not-allowed disabled:opacity-40`}
           >
             Guardar
           </button>
@@ -277,20 +278,24 @@ export function EditorPage() {
           value={title}
           onChange={(e) => handleTitleChange(e.target.value)}
           placeholder="Sin título"
-          className={`w-full min-w-0 bg-transparent text-lg font-medium text-gray-100 placeholder:text-gray-600 focus:outline-none ${FONT_DISPLAY}`}
+          className={`w-full min-w-0 truncate bg-transparent text-[26px] font-bold tracking-[-0.9px] text-gray-100 placeholder:text-gray-600 focus:outline-none ${FONT_DISPLAY}`}
         />
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-[14px] bg-white/[0.07] px-2.5 py-1.5 text-[13px] text-gray-300">{folderName}</span>
+          <span className="rounded-[14px] bg-white/[0.07] px-2.5 py-1.5 text-[13px] text-gray-300">{wordCount} palabras</span>
+          <span className={`rounded-[14px] px-2.5 py-1.5 text-[13px] font-medium ${ACCENT_SOFT_BG} ${ACCENT_TEXT}`}>
+            ≈ {durationLabel} a {wpm} PPM
+          </span>
+        </div>
       </header>
-
-      <EditorToolbar canvasRef={canvasRef} />
 
       <div className="flex-1 overflow-auto px-4 py-6 sm:px-6">
         <EditorCanvas ref={canvasRef} onChange={handleContentChange} />
       </div>
 
-      <footer className="flex flex-col gap-2 border-t border-white/10 px-4 py-3 text-xs text-gray-500 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-        <span>
-          {wordCount} palabras · ~{durationLabel} min
-        </span>
+      <EditorToolbar canvasRef={canvasRef} />
+
+      <footer className="flex items-center justify-end gap-2 px-4 py-2 text-xs text-gray-500 sm:px-6">
         <label className="flex items-center gap-2">
           <span>Velocidad de referencia (PPM)</span>
           <input

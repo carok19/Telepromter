@@ -2,16 +2,23 @@
 // El TeleprompterEngine (Fase 2) leerá estas mismas clases/atributos para
 // decidir si un marcador de pausa debe detener el autoscroll. En Fase 1
 // solo se prepara la estructura del contenido; no hay reproducción todavía.
+import { ACCENT_BG, ACCENT_SOFT_BG, ACCENT_TEXT, ON_ACCENT } from '../styles/tokens'
 
 export const PAUSE_MARKER_CLASS = 'tp-marker-pause'
 export const NOTE_MARKER_CLASS = 'tp-note'
 export const AUTO_PAUSE_ATTR = 'data-auto-pause'
 
-const PAUSE_VISUAL_STYLE = 'bg-amber-500/15 text-amber-300 border border-amber-500/40'
-const PAUSE_AUTO_STYLE = 'bg-amber-500/25 text-amber-200 border border-amber-400'
+// Handoff: la "pausa" del mockup es una píldora lisa (bg acento suave,
+// texto acento, sin borde) — acá se mantienen DOS variantes (a diferencia
+// del mockup, que solo tiene una) porque acá sí importa distinguir "pausa
+// solo visual" de "pausa automática" (Fase 2 la usará para el autoscroll):
+// la automática usa el acento SÓLIDO (como un chip ya "activado"), no un
+// tono más fuerte del mismo borde.
+const PAUSE_VISUAL_STYLE = `${ACCENT_SOFT_BG} ${ACCENT_TEXT}`
+const PAUSE_AUTO_STYLE = `${ACCENT_BG} ${ON_ACCENT}`
 
 export function getPauseMarkerClassName(autoPause: boolean): string {
-  return `${PAUSE_MARKER_CLASS} rounded px-1.5 py-0.5 text-xs font-semibold align-middle ${
+  return `${PAUSE_MARKER_CLASS} rounded-full px-2.5 py-0.5 text-[13px] font-semibold align-middle ${
     autoPause ? PAUSE_AUTO_STYLE : PAUSE_VISUAL_STYLE
   }`
 }
