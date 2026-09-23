@@ -556,6 +556,15 @@ const TIMEOUT_ERROR = 'No se pudo conectar (tiempo de espera agotado). Revisá t
 function isOffline(): boolean {
   return typeof navigator !== 'undefined' && navigator.onLine === false
 }
+// Cualquier fallo de red que NO sea nuestro timeout manual (típicamente
+// `TypeError: Failed to fetch`, que el navegador lanza cuando el request ni
+// siquiera llega a completarse: sin señal, DNS/CORS, un bloqueador de
+// contenido, o el propio backend de Supabase inalcanzable un instante) caía
+// antes por un `throw err` que nadie en la cadena de llamadas atrapaba —
+// quedaba como una promesa rechazada sin manejar y la pantalla se congelaba
+// en "Conectando...". Ahora se trata igual que un timeout: se informa con
+// un mensaje entendible en vez de propagarse como excepción.
+const NETWORK_ERROR = 'No se pudo conectar. Revisá tu conexión e intentá de nuevo.'
 
 function withConnectionTimeout<T>(promise: PromiseLike<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -739,7 +748,8 @@ export async function createSession(scriptTitle: string): Promise<{ sessionId: s
     result = await withConnectionTimeout(client.rpc('create_remote_session', { p_title: scriptTitle }))
   } catch (err) {
     if (err instanceof Error && err.message === 'TIMEOUT') return { sessionId: null, error: TIMEOUT_ERROR }
-    throw err
+    console.error('[remote] create_remote_session falló (red):', err)
+          return { sessionId: null, error: NETWORK_ERROR }
   }
   const { data, error } = result
   if (error) {
@@ -1008,7 +1018,8 @@ export async function joinSessionAsRemote(sessionId: string): Promise<JoinSessio
     if (err instanceof Error && err.message === 'TIMEOUT') {
       return { outcome: 'error', session: null, errorMessage: TIMEOUT_ERROR }
     }
-    throw err
+    console.error('[remote] join_remote_session falló (red):', err)
+          return { outcome: 'error', session: null, errorMessage: NETWORK_ERROR }
   }
   const { data, error } = result
   if (error) {
