@@ -32,6 +32,7 @@
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { CALIBRATION_RANGES, type MirrorMode, type TextAlign } from '../engine/calibrationEngine'
 import type { TeleprompterStatus } from '../engine/teleprompterEngine'
+import { createWebrtcLink, type RemoteWireEvent, type WebrtcLink, type WebrtcSignal } from './remoteWebrtc'
 import { getSupabaseClient } from './supabase'
 
 export type RemoteSessionStatus = 'waiting' | 'paired' | 'ended'
@@ -374,6 +375,16 @@ interface ChannelEntry {
   confirmedRemoteUid: string | null
   lastRefreshRequestedAt: number
   refreshSeq: number
+  // Atajo P2P opcional (ver remoteWebrtc.ts) — null hasta que el host o el
+  // remoto llaman a ensureWebrtcLink() la primera vez; a partir de ahí vive
+  // mientras dure el canal, sin importar si la negociación llegó a cerrar
+  // un DataChannel o no (sendWireEvent() chequea isOpen() en cada envío).
+  webrtcLink: WebrtcLink | null
+  // Fan-out compartido entre Supabase broadcast y el DataChannel P2P — se
+  // asigna dentro de ensureChannel() (necesita cerrar sobre los *Listeners
+  // de esa misma entry) y lo usa ensureWebrtcLink() para que los mensajes
+  // que lleguen por el DataChannel terminen en los mismos listeners.
+  dispatchWireEvent?: (kind: RemoteWireEvent, payload: unknown) => void
 }
 
 const channelRegistry = new Map<string, ChannelEntry>()
@@ -484,27 +495,55 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
     confirmedRemoteUid: null,
     lastRefreshRequestedAt: 0,
     refreshSeq: 0,
+    webrtcLink: null,
   }
   channelRegistry.set(sessionId, entry)
 
+  // Único punto de entrada para un mensaje "de la ruta caliente" (comando/
+  // playback/calibración/lista/aviso) sin importar por cuál transporte
+  // llegó — Supabase broadcast (abajo) o el DataChannel P2P (ver
+  // ensureWebrtcLink). Mantiene un solo lugar donde vive el fan-out hacia
+  // los listeners por tipo, en vez de duplicar ese switch en dos lugares.
+  function dispatchWireEvent(kind: RemoteWireEvent, payload: unknown): void {
+    switch (kind) {
+      case 'command':
+        commandListeners.forEach((fn) => fn(payload as RemoteCommand))
+        return
+      case 'playback':
+        playbackListeners.forEach((fn) => fn(payload as RemotePlayback))
+        return
+      case 'calibration':
+        calibrationListeners.forEach((fn) => fn(payload as RemoteCalibration))
+        return
+      case 'scriptList':
+        scriptListListeners.forEach((fn) => fn(payload as RemoteScriptList))
+        return
+      case 'notice':
+        noticeListeners.forEach((fn) => fn(payload as RemoteNotice))
+        return
+    }
+  }
+  entry.dispatchWireEvent = dispatchWireEvent
+
   channel
-    .on<RemoteCommand>('broadcast', { event: 'command' }, ({ payload }) => {
-      commandListeners.forEach((fn) => fn(payload))
-    })
-    .on<RemotePlayback>('broadcast', { event: 'playback' }, ({ payload }) => {
-      playbackListeners.forEach((fn) => fn(payload))
-    })
-    .on<RemoteCalibration>('broadcast', { event: 'calibration' }, ({ payload }) => {
-      calibrationListeners.forEach((fn) => fn(payload))
-    })
-    .on<RemoteScriptList>('broadcast', { event: 'scriptList' }, ({ payload }) => {
-      scriptListListeners.forEach((fn) => fn(payload))
-    })
-    .on<RemoteNotice>('broadcast', { event: 'notice' }, ({ payload }) => {
-      noticeListeners.forEach((fn) => fn(payload))
-    })
+    .on<RemoteCommand>('broadcast', { event: 'command' }, ({ payload }) => dispatchWireEvent('command', payload))
+    .on<RemotePlayback>('broadcast', { event: 'playback' }, ({ payload }) => dispatchWireEvent('playback', payload))
+    .on<RemoteCalibration>('broadcast', { event: 'calibration' }, ({ payload }) =>
+      dispatchWireEvent('calibration', payload),
+    )
+    .on<RemoteScriptList>('broadcast', { event: 'scriptList' }, ({ payload }) =>
+      dispatchWireEvent('scriptList', payload),
+    )
+    .on<RemoteNotice>('broadcast', { event: 'notice' }, ({ payload }) => dispatchWireEvent('notice', payload))
     .on('broadcast', { event: 'ended' }, () => {
       endedListeners.forEach((fn) => fn())
+    })
+    // Señalización P2P (ver remoteWebrtc.ts) — registrada ACÁ, antes del
+    // primer subscribe(), como pide el cliente de Realtime para cualquier
+    // binding de broadcast; el link en sí (entry.webrtcLink) puede crearse
+    // más tarde — handleSignal() es un no-op mientras no exista.
+    .on<WebrtcSignal>('broadcast', { event: 'webrtc-signal' }, ({ payload }) => {
+      entry.webrtcLink?.handleSignal(payload)
     })
     .on('presence', { event: 'sync' }, () => {
       // Recalcula remoteConnected con lo que ya se sabía confirmado, y de
@@ -519,6 +558,38 @@ function ensureChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>>
     })
 
   return entry
+}
+
+// Arranca (si todavía no existe) el atajo P2P de esta sesión — host y
+// remoto la llaman desde su propio punto de entrada (trackHostPresence /
+// joinSessionAsRemote) con su rol correspondiente. Idempotente: una
+// recarga de página siempre pasa por ensureChannel() primero (que crea una
+// entry nueva con webrtcLink:null), así que esta guarda solo evita
+// reiniciar la negociación si algo dentro de la MISMA pestaña ya la inició
+// (p. ej. trackHostPresence() se llama varias veces: crear, retomar,
+// remontar TeleprompterPage).
+function ensureWebrtcLink(entry: ChannelEntry, role: 'host' | 'remote'): void {
+  if (entry.webrtcLink) return
+  const link = createWebrtcLink({
+    role,
+    sendSignal: (message) => void entry.channel.send({ type: 'broadcast', event: 'webrtc-signal', payload: message }),
+    onMessage: (kind, payload) => entry.dispatchWireEvent?.(kind, payload),
+  })
+  entry.webrtcLink = link
+  // start() recién tiene sentido (y solo hace algo real para 'remote',
+  // quien ofrece) una vez que el canal de señalización está SUBSCRIBED —
+  // sendSignal() necesita poder mandar la oferta ya mismo, no encolarla a
+  // ciegas contra un canal que todavía está uniéndose.
+  waitForSubscribed(entry).then(() => link.start())
+}
+
+// Envía por el DataChannel P2P si está abierto AHORA MISMO; si no (todavía
+// negociando, red que bloquea P2P, o WebRTC ni siquiera soportado), cae a
+// Supabase broadcast exactamente como se hacía antes de este atajo —
+// ningún llamador necesita saber cuál de los dos se usó.
+async function sendWireEvent(entry: ChannelEntry, kind: RemoteWireEvent, payload: unknown): Promise<void> {
+  if (entry.webrtcLink?.send(kind, payload)) return
+  await entry.channel.send({ type: 'broadcast', event: kind, payload })
 }
 
 function waitForSubscribed(entry: ChannelEntry): Promise<void> {
@@ -538,6 +609,7 @@ function releaseChannel(client: NonNullable<ReturnType<typeof getSupabaseClient>
   const entry = channelRegistry.get(sessionId)
   if (!entry) return
   channelRegistry.delete(sessionId)
+  entry.webrtcLink?.destroy()
   client.removeChannel(entry.channel)
 }
 
@@ -717,6 +789,7 @@ function rowToSession(row: SessionRow, remoteUidOverride?: string | null): Remot
 // ESTE cliente en el canal, nunca duplica nada.
 function trackHostPresence(client: NonNullable<ReturnType<typeof getSupabaseClient>>, sessionId: string): void {
   const entry = ensureChannel(client, sessionId)
+  ensureWebrtcLink(entry, 'host')
   waitForSubscribed(entry).then(() => {
     entry.channel.track({ role: 'host' } satisfies PresencePayload)
   })
@@ -1033,6 +1106,7 @@ export async function joinSessionAsRemote(sessionId: string): Promise<JoinSessio
   if (row.remote_client_id !== clientId) return { outcome: 'occupied', session: null }
 
   const entry = ensureChannel(client, sessionId)
+  ensureWebrtcLink(entry, 'remote')
   waitForSubscribed(entry).then(() => {
     entry.channel.track({ role: 'remote', clientId } satisfies PresencePayload)
   })
@@ -1056,7 +1130,7 @@ export async function sendCommand(sessionId: string, type: RemoteCommandType, va
     senderId: getRemoteClientId(),
     ...(value !== undefined ? { value } : {}),
   }
-  await entry.channel.send({ type: 'broadcast', event: 'command', payload: command })
+  await sendWireEvent(entry, 'command', command)
 }
 
 export async function publishPlayback(sessionId: string, playback: RemotePlayback): Promise<void> {
@@ -1064,7 +1138,7 @@ export async function publishPlayback(sessionId: string, playback: RemotePlaybac
   if (!client) return
   const entry = ensureChannel(client, sessionId)
   await waitForSubscribed(entry)
-  await entry.channel.send({ type: 'broadcast', event: 'playback', payload: playback })
+  await sendWireEvent(entry, 'playback', playback)
 }
 
 // F8.4 parte B — REMOTE → HOST: pide cambiar un ajuste de calibración en
@@ -1089,7 +1163,7 @@ export async function sendCalibrationCommand(
     param,
     value,
   }
-  await entry.channel.send({ type: 'broadcast', event: 'command', payload: command })
+  await sendWireEvent(entry, 'command', command)
 }
 
 // F8.4 parte B — HOST → REMOTE: publica el snapshot de calibración vigente
@@ -1100,7 +1174,7 @@ export async function publishCalibration(sessionId: string, calibration: RemoteC
   if (!client) return
   const entry = ensureChannel(client, sessionId)
   await waitForSubscribed(entry)
-  await entry.channel.send({ type: 'broadcast', event: 'calibration', payload: calibration })
+  await sendWireEvent(entry, 'calibration', calibration)
 }
 
 // B.3 — HOST → REMOTE: la lista de guiones para elegir, agrupada por
@@ -1113,7 +1187,7 @@ export async function publishScriptList(sessionId: string, list: RemoteScriptLis
   if (!client) return
   const entry = ensureChannel(client, sessionId)
   await waitForSubscribed(entry)
-  await entry.channel.send({ type: 'broadcast', event: 'scriptList', payload: list })
+  await sendWireEvent(entry, 'scriptList', list)
 }
 
 // B.2 — HOST → REMOTE: aviso puntual (p. ej. "ese guion ya no existe" si
@@ -1125,7 +1199,7 @@ export async function publishNotice(sessionId: string, message: string): Promise
   const entry = ensureChannel(client, sessionId)
   await waitForSubscribed(entry)
   const notice: RemoteNotice = { message, at: Date.now() }
-  await entry.channel.send({ type: 'broadcast', event: 'notice', payload: notice })
+  await sendWireEvent(entry, 'notice', notice)
 }
 
 // `SUBSCRIBED` en el estado del canal es el equivalente, por sesión, a lo
